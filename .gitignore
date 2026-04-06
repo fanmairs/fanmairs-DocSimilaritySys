@@ -1,0 +1,27 @@
+# IDE and system files
+.idea/
+.vscode/
+*.log
+
+# Python cache / virtual artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Runtime temp files
+temp_uploads/
+temp_pycache/
+tasks.db
+
+# Frontend build artifacts
+frontend/node_modules/
+frontend/dist/
+
+# Large local embedding/model files
+dicts/embeddings/*.vec
+dicts/embeddings/*.bin
+
+# Local experimental corpus (keep private/offline by default)
+data/
