@@ -97,64 +97,85 @@ const submit = () => {
 </script>
 
 <template>
-  <section class="surface-card mb-8 px-6 py-6 sm:px-8">
-    <div class="mb-5 flex items-center justify-between gap-4">
-      <h2 class="panel-title">上传与检测配置</h2>
-      <span class="rounded-full bg-ink-900 px-3 py-1 text-xs font-semibold tracking-wide text-white">
+  <section class="surface-panel px-5 py-6 sm:px-6">
+    <header class="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <p class="badge-kicker">Workspace</p>
+        <h2 class="mt-3 panel-title">上传与检测配置</h2>
+        <p class="mt-2 panel-subtitle">
+          上传待测文档和参考文档后，选择引擎参数即可发起任务。
+        </p>
+      </div>
+      <span class="inline-flex items-center rounded-full border border-mint-500/25 bg-mint-500/10 px-3 py-1 text-xs font-semibold tracking-wide text-mint-600">
         实时查重
       </span>
-    </div>
+    </header>
 
-    <div class="grid gap-4 md:grid-cols-2">
-      <article class="rounded-2xl border border-mint-500/20 bg-mint-500/5 p-4">
-        <p class="mb-3 text-sm font-semibold text-mint-600">待检测文档</p>
+    <div class="mt-6 grid gap-4 xl:grid-cols-2">
+      <article class="upload-panel upload-panel-target">
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-sm font-bold text-mint-600">待检测文档</p>
+          <span class="muted-label">单文件</span>
+        </div>
         <input
           ref="targetInputRef"
           type="file"
           accept=".txt,.pdf,.docx"
-          class="block w-full cursor-pointer text-sm text-ink-900 file:mr-4 file:rounded-full file:border-0 file:bg-mint-600 file:px-4 file:py-2 file:font-bold file:text-white hover:file:bg-mint-500"
+          class="mt-3 block w-full cursor-pointer text-sm text-ink-900 file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-night-900 file:px-4 file:py-2 file:text-xs file:font-bold file:text-white hover:file:bg-night-950"
           @change="onTargetChange"
         />
+        <p class="mt-2 text-xs text-ink-900/65">支持 txt / pdf / docx</p>
 
-        <div v-if="targetFile" class="mt-4 rounded-xl bg-white p-3">
+        <div v-if="targetFile" class="mt-4 rounded-xl border border-white/75 bg-white/90 p-3">
           <p class="truncate text-sm font-semibold text-ink-900" :title="targetFile.name">{{ targetFile.name }}</p>
-          <div class="mt-3 flex gap-2">
+          <div class="mt-3 flex flex-wrap gap-2">
             <button class="btn-ghost" @click="openPreview(targetFile)">预览</button>
-            <button class="btn-ghost" @click="clearTarget">移除</button>
+            <button class="btn-danger" @click="clearTarget">移除</button>
           </div>
         </div>
       </article>
 
-      <article class="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
-        <p class="mb-3 text-sm font-semibold text-amber-600">参考文档库</p>
+      <article class="upload-panel upload-panel-reference">
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-sm font-bold text-amber-600">参考文档库</p>
+          <span class="muted-label">{{ refFiles.length }} 份文件</span>
+        </div>
         <input
           ref="refInputRef"
           type="file"
           accept=".txt,.pdf,.docx"
           multiple
-          class="block w-full cursor-pointer text-sm text-ink-900 file:mr-4 file:rounded-full file:border-0 file:bg-amber-500 file:px-4 file:py-2 file:font-bold file:text-white hover:file:bg-amber-600"
+          class="mt-3 block w-full cursor-pointer text-sm text-ink-900 file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-amber-500 file:px-4 file:py-2 file:text-xs file:font-bold file:text-white hover:file:bg-amber-600"
           @change="onRefChange"
         />
+        <p class="mt-2 text-xs text-ink-900/65">可一次选择多份参考文档</p>
 
-        <div v-if="refFiles.length" class="mt-4 max-h-40 space-y-2 overflow-y-auto pr-1">
-          <div v-for="(file, index) in refFiles" :key="`${file.name}-${index}`" class="rounded-xl bg-white p-3">
+        <div v-if="refFiles.length" class="mt-4 max-h-56 space-y-2 overflow-y-auto pr-1">
+          <div v-for="(file, index) in refFiles" :key="`${file.name}-${index}`" class="rounded-xl border border-white/75 bg-white/90 p-3">
             <p class="truncate text-sm font-semibold text-ink-900" :title="file.name">{{ file.name }}</p>
-            <div class="mt-3 flex gap-2">
+            <div class="mt-3 flex flex-wrap gap-2">
               <button class="btn-ghost" @click="openPreview(file)">预览</button>
-              <button class="btn-ghost" @click="removeRef(index)">移除</button>
+              <button class="btn-danger" @click="removeRef(index)">移除</button>
             </div>
           </div>
         </div>
       </article>
     </div>
 
-    <div class="mt-6 grid gap-4 rounded-2xl border border-mint-500/20 bg-white p-4 lg:grid-cols-[1fr_auto] lg:items-center">
-      <div class="grid gap-4 md:grid-cols-2">
-        <label class="flex flex-col gap-1">
-          <span class="text-xs font-semibold uppercase tracking-wide text-ink-900/65">检测引擎</span>
+    <section class="mt-6 rounded-2xl border border-mint-500/20 bg-white/85 p-4 sm:p-5">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <p class="muted-label">Engine Settings</p>
+          <h3 class="mt-1 font-display text-lg font-bold text-ink-900">检测参数</h3>
+        </div>
+      </div>
+
+      <div class="mt-4 grid gap-3 sm:grid-cols-2">
+        <label class="flex flex-col gap-1.5">
+          <span class="muted-label">检测引擎</span>
           <select
             v-model="modeModel"
-            class="rounded-xl border border-mint-500/20 bg-paper-50 px-3 py-2 text-sm font-semibold text-ink-900 focus:border-mint-600 focus:outline-none"
+            class="rounded-xl border border-mint-500/25 bg-paper-50 px-3 py-2.5 text-sm font-semibold text-ink-900 focus:border-mint-600 focus:outline-none"
           >
             <option value="bert">深度语义引擎 (BGE)</option>
             <option value="tfidf">传统引擎 (TF-IDF + LSA)</option>
@@ -163,12 +184,12 @@ const submit = () => {
 
         <label
           v-if="modeModel === 'bert'"
-          class="flex flex-col gap-1"
+          class="flex flex-col gap-1.5"
         >
-          <span class="text-xs font-semibold uppercase tracking-wide text-ink-900/65">BGE阈值档位</span>
+          <span class="muted-label">BGE阈值档位</span>
           <select
             v-model="bertProfileModel"
-            class="rounded-xl border border-mint-500/20 bg-paper-50 px-3 py-2 text-sm font-semibold text-ink-900 focus:border-mint-600 focus:outline-none"
+            class="rounded-xl border border-mint-500/25 bg-paper-50 px-3 py-2.5 text-sm font-semibold text-ink-900 focus:border-mint-600 focus:outline-none"
           >
             <option value="strict">Strict（终审/低误报）</option>
             <option value="balanced">Balanced（日常默认）</option>
@@ -176,19 +197,20 @@ const submit = () => {
           </select>
         </label>
 
-        <label class="flex items-center gap-2 rounded-xl border border-mint-500/20 bg-paper-50 px-3 py-2">
+        <label class="flex items-center gap-2 rounded-xl border border-mint-500/25 bg-paper-50 px-3 py-2.5 sm:col-span-2">
           <input v-model="bodyModeModel" type="checkbox" class="h-4 w-4 accent-mint-600" />
           <span class="text-sm font-semibold text-ink-900">启用正文模式</span>
         </label>
       </div>
 
-      <button class="btn-primary w-full lg:w-auto" :disabled="loading" @click="submit">
+      <button class="btn-primary mt-5 w-full" :disabled="loading" @click="submit">
         <span v-if="loading" class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"></span>
         {{ loading ? pollStatusMessage : "开始查重" }}
       </button>
-    </div>
+      <p v-if="loading" class="mt-2 text-center text-xs font-semibold text-mint-600">{{ pollStatusMessage }}</p>
+    </section>
 
-    <p v-if="notice" class="mt-4 rounded-xl border border-amber-200 bg-amber-100/70 px-3 py-2 text-sm font-semibold text-amber-700">
+    <p v-if="notice" class="mt-4 rounded-xl border border-amber-300/45 bg-amber-100/70 px-3 py-2 text-sm font-semibold text-amber-700">
       {{ notice }}
     </p>
   </section>

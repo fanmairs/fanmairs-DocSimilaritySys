@@ -16,20 +16,21 @@ const percentage = computed(() => `${(props.score * 100).toFixed(2)}%`);
 
 const styleClass = computed(() => {
   if (props.score >= 0.7) {
-    return "bg-rose-100 text-rose-700 border-rose-200";
+    return "border-rose-200 bg-rose-100/85 text-rose-700";
   }
   if (props.score >= 0.35) {
-    return "bg-amber-100 text-amber-700 border-amber-200";
+    return "border-amber-200 bg-amber-100/85 text-amber-700";
   }
-  return "bg-emerald-100 text-emerald-700 border-emerald-200";
+  return "border-emerald-200 bg-emerald-100/85 text-emerald-700";
 });
 </script>
 
 <template>
   <span
-    class="inline-flex items-center rounded-full border px-3 py-1 text-xs font-bold tracking-wide"
+    class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold tracking-wide"
     :class="styleClass"
   >
+    <span class="inline-block h-1.5 w-1.5 rounded-full bg-current"></span>
     {{ label }} {{ percentage }}
   </span>
 </template>

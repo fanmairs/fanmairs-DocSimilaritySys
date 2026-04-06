@@ -189,25 +189,35 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="mx-auto min-h-screen max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+  <main class="app-shell">
     <HeroBanner />
-    <ControlPanel
-      v-model:mode="mode"
-      v-model:bertProfile="bertProfile"
-      v-model:bodyMode="bodyMode"
-      :target-file="targetFile"
-      :ref-files="refFiles"
-      :loading="loading"
-      :poll-status-message="pollStatusMessage"
-      :notice="notice"
-      @target-selected="onTargetSelected"
-      @refs-selected="onRefsSelected"
-      @clear-target="clearTarget"
-      @remove-ref="removeRef"
-      @preview-file="previewFile"
-      @submit="submitCheck"
-    />
-    <ResultsPanel :results="results" :mode="mode" :cost-time="costTime" />
+
+    <section class="workspace-layout">
+      <ControlPanel
+        class="workspace-control"
+        v-model:mode="mode"
+        v-model:bertProfile="bertProfile"
+        v-model:bodyMode="bodyMode"
+        :target-file="targetFile"
+        :ref-files="refFiles"
+        :loading="loading"
+        :poll-status-message="pollStatusMessage"
+        :notice="notice"
+        @target-selected="onTargetSelected"
+        @refs-selected="onRefsSelected"
+        @clear-target="clearTarget"
+        @remove-ref="removeRef"
+        @preview-file="previewFile"
+        @submit="submitCheck"
+      />
+      <ResultsPanel
+        :results="results"
+        :mode="mode"
+        :cost-time="costTime"
+        :loading="loading"
+        :poll-status-message="pollStatusMessage"
+      />
+    </section>
 
     <PreviewModal
       :visible="previewVisible"

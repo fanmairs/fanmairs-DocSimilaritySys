@@ -14,14 +14,25 @@ const props = defineProps({
   costTime: {
     type: Number,
     default: 0
+  },
+  loading: {
+    type: Boolean,
+    default: false
+  },
+  pollStatusMessage: {
+    type: String,
+    default: ""
   }
 });
 
+const hasResults = computed(() => Array.isArray(props.results));
+const resultRows = computed(() => props.results || []);
+
 const highestScore = computed(() => {
-  if (!props.results || !props.results.length) {
+  if (!resultRows.value.length) {
     return 0;
   }
-  const top = props.results[0];
+  const top = resultRows.value[0];
   if (props.mode === "bert") {
     return top.sim_bert ?? top.sim_lsa ?? 0;
   }
@@ -40,33 +51,53 @@ const summaryText = computed(() => {
 </script>
 
 <template>
-  <section v-if="results" class="space-y-5">
-    <header class="surface-card px-6 py-5">
+  <section class="space-y-4">
+    <header class="surface-panel px-5 py-5 sm:px-6">
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <h2 class="panel-title">查重报告</h2>
-        <p class="rounded-full bg-ink-900 px-3 py-1 text-xs font-semibold tracking-wide text-white">
-          耗时 {{ costTime.toFixed(2) }}s
-        </p>
+        <div>
+          <p class="badge-kicker">Results</p>
+          <h2 class="mt-3 panel-title">查重报告</h2>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <p class="inline-flex items-center rounded-full border border-mint-500/25 bg-mint-500/10 px-3 py-1 text-xs font-semibold text-mint-600">
+            {{ loading ? pollStatusMessage || "任务进行中..." : `耗时 ${costTime.toFixed(2)}s` }}
+          </p>
+          <p v-if="hasResults" class="inline-flex items-center rounded-full border border-ink-900/15 bg-ink-900 px-3 py-1 text-xs font-semibold text-white">
+            返回 {{ resultRows.length }} 条
+          </p>
+        </div>
       </div>
-      <p class="mt-3 text-note">{{ summaryText }}</p>
-      <p class="mt-2 text-xs text-ink-900/65">
+      <p class="mt-3 text-note">{{ hasResults ? summaryText : "结果将在任务完成后展示，包含相似度排序与可复核片段。" }}</p>
+      <p class="mt-2 text-xs text-ink-900/62">
         指标备注：`风险`=告警分数（用于结论）；`总分`=Hybrid 综合相似度（用于最终排序）；`LSA`=潜在语义相似度；`TF-IDF`=字面词频相似度；`Soft`=词向量/同义词软匹配相似度（未加载词向量时常为 0）。
       </p>
     </header>
 
-    <article v-if="results.length === 0" class="surface-card px-6 py-6 text-note">
+    <article v-if="!hasResults" class="surface-panel px-5 py-6 sm:px-6">
+      <p class="text-sm font-semibold text-ink-900">暂无检测结果</p>
+      <p class="mt-2 text-note">
+        先在左侧上传文档并点击“开始查重”。系统将自动轮询任务状态并刷新结果。
+      </p>
+      <div class="mt-4 grid gap-2 text-sm text-ink-900/72 sm:grid-cols-3">
+        <p class="glass-panel px-3 py-2">1. 上传待测文档</p>
+        <p class="glass-panel px-3 py-2">2. 选择参考文档</p>
+        <p class="glass-panel px-3 py-2">3. 提交任务并查看结果</p>
+      </div>
+    </article>
+
+    <article v-else-if="resultRows.length === 0" class="surface-panel px-6 py-6 text-note">
       本次未生成可展示结果，请检查文档内容是否为空或格式异常。
     </article>
 
     <article
-      v-for="(item, index) in results"
+      v-for="(item, index) in resultRows"
       :key="`${item.file}-${index}`"
-      class="surface-card animate-rise-in overflow-hidden"
+      class="result-card animate-rise-in"
       :style="{ animationDelay: `${Math.min(index * 80, 400)}ms` }"
     >
-      <div class="border-b border-mint-500/15 bg-paper-50/80 px-6 py-4">
+      <div class="border-b border-mint-500/15 bg-paper-50/85 px-5 py-4 sm:px-6">
         <div class="flex flex-wrap items-center justify-between gap-3">
-          <h3 class="font-display text-lg font-extrabold text-ink-900">
+          <h3 class="font-display text-base font-extrabold text-ink-900 sm:text-lg">
             TOP {{ index + 1 }} · {{ item.file }}
           </h3>
           <div class="flex flex-wrap gap-2">
@@ -80,9 +111,9 @@ const summaryText = computed(() => {
         </div>
       </div>
 
-      <div class="px-6 py-5">
+      <div class="px-5 py-4 sm:px-6 sm:py-5">
         <div v-if="item.plagiarized_parts && item.plagiarized_parts.length" class="space-y-3">
-          <details class="group rounded-2xl border border-amber-300/45 bg-white/80 p-4">
+          <details class="group rounded-2xl border border-amber-300/45 bg-white/86 p-4">
             <summary class="flex cursor-pointer list-none items-center justify-between gap-3">
               <div class="space-y-1">
                 <p class="text-sm font-semibold text-ink-900">
@@ -113,7 +144,7 @@ const summaryText = computed(() => {
               >
                 <div class="border-b border-amber-200/70 p-4 md:border-b-0 md:border-r">
                   <p class="mb-2 text-xs font-bold uppercase tracking-wider text-ink-900/60">待测文档</p>
-                  <p class="font-prose text-sm leading-7 text-ink-900">{{ part.target_part }}</p>
+                  <p class="font-prose text-sm leading-7 text-ink-900/90">{{ part.target_part }}</p>
                 </div>
                 <div class="bg-amber-50/70 p-4">
                   <div class="mb-2 flex items-center justify-between gap-2">
@@ -122,7 +153,7 @@ const summaryText = computed(() => {
                       {{ ((part.score || 0) * 100).toFixed(2) }}%
                     </span>
                   </div>
-                  <p class="font-prose text-sm leading-7 text-amber-900">{{ part.ref_part }}</p>
+                  <p class="font-prose text-sm leading-7 text-amber-900/90">{{ part.ref_part }}</p>
                 </div>
               </div>
             </div>
