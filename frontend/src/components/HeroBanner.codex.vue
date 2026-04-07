@@ -92,9 +92,6 @@ const signalBars = computed(() => {
     <div class="hero-slab__glow hero-slab__glow--amber"></div>
     <div class="hero-slab__glow hero-slab__glow--mint"></div>
     <div class="hero-slab__mesh"></div>
-    <div class="hero-sakura" aria-hidden="true">
-      <span v-for="petal in 12" :key="petal" class="hero-sakura__petal"></span>
-    </div>
 
     <div class="hero-layout">
       <div class="hero-copy">

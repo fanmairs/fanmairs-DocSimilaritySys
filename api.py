@@ -156,13 +156,51 @@ def gpu_worker():
                         ref_text,
                         threshold_profile=bert_profile
                     )
-                    total_plagiarized_length = sum(p['length'] for p in plagiarized_parts)
-                    total_length = len(target_text) if len(target_text) > 0 else 1
-                    macro_ratio = min(total_plagiarized_length / total_length, 1.0)
+                    score_breakdown = bert_engine.score_document_pair(
+                        target_text,
+                        ref_text,
+                        plagiarized_parts=plagiarized_parts,
+                        threshold_profile=bert_profile
+                    )
+                    print(
+                        ">>> [BGE][Score] "
+                        f"file={os.path.basename(ref_path)} "
+                        f"final={score_breakdown['final_score']:.4f} "
+                        f"risk={score_breakdown.get('risk_score', score_breakdown['final_score']):.4f} "
+                        f"doc={score_breakdown['doc_semantic']:.4f} "
+                        f"doc_ex={score_breakdown.get('doc_semantic_excess', score_breakdown['doc_semantic']):.4f} "
+                        f"cov={score_breakdown['coverage']:.4f} "
+                        f"cov_eff={score_breakdown.get('coverage_effective', score_breakdown['coverage']):.4f} "
+                        f"cov_w={score_breakdown.get('coverage_weighted', score_breakdown['coverage']):.4f} "
+                        f"conf={score_breakdown['confidence']:.4f} "
+                        f"base={score_breakdown['base_score']:.4f} "
+                        f"gate={score_breakdown['gate']:.4f} "
+                        f"hits={score_breakdown['hit_count']}"
+                    )
                     
                     results.append({
                         "file": os.path.basename(ref_path).replace("ref_", ""),
-                        "sim_bert": float(macro_ratio),
+                        # Backward-compatible field: now mapped to the composite BGE similarity score.
+                        "sim_bert": float(score_breakdown["final_score"]),
+                        "sim_bert_risk": float(score_breakdown.get("risk_score", score_breakdown["final_score"])),
+                        "sim_bert_doc": float(score_breakdown["doc_semantic"]),
+                        "sim_bert_doc_excess": float(score_breakdown.get("doc_semantic_excess", score_breakdown["doc_semantic"])),
+                        "sim_bert_coverage": float(score_breakdown["coverage"]),
+                        "sim_bert_coverage_raw": float(score_breakdown.get("coverage_raw", score_breakdown["coverage"])),
+                        "sim_bert_coverage_weighted": float(score_breakdown.get("coverage_weighted", score_breakdown["coverage"])),
+                        "sim_bert_coverage_effective": float(score_breakdown.get("coverage_effective", score_breakdown["coverage"])),
+                        "sim_bert_confidence": float(score_breakdown["confidence"]),
+                        "sim_bert_base": float(score_breakdown["base_score"]),
+                        "sim_bert_gate": float(score_breakdown["gate"]),
+                        "sim_bert_hits": int(score_breakdown["hit_count"]),
+                        "sim_bert_semantic_signal": float(score_breakdown.get("semantic_signal", 0.0)),
+                        "sim_bert_evidence": float(score_breakdown.get("evidence_score", 0.0)),
+                        "sim_bert_continuity_bonus": float(score_breakdown.get("continuity_bonus", 0.0)),
+                        "sim_bert_continuity_longest": float(score_breakdown.get("continuity_longest", 0.0)),
+                        "sim_bert_continuity_top3": float(score_breakdown.get("continuity_top3", 0.0)),
+                        "sim_bert_low_evidence_cap": float(score_breakdown.get("low_evidence_cap", 1.0)),
+                        # Explicit macro coverage field for downstream display/debug.
+                        "sim_bert_legacy_coverage": float(score_breakdown.get("coverage_raw", score_breakdown["coverage"])),
                         "bert_profile": bert_profile,
                         "plagiarized_parts": plagiarized_parts
                     })

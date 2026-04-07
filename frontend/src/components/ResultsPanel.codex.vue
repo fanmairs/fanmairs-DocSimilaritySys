@@ -40,34 +40,11 @@ const highestScore = computed(() => {
   return topResult.value.risk_score ?? topResult.value.sim_hybrid ?? topResult.value.sim_lsa ?? 0;
 });
 
-const narrativeSignal = computed(() => {
-  if (!topResult.value) {
-    return 0;
-  }
-
-  if (props.mode === "bert") {
-    return Math.max(
-      topResult.value.sim_bert ?? 0,
-      topResult.value.sim_bert_risk ?? 0
-    );
-  }
-
-  return highestScore.value;
-});
-
 const summaryText = computed(() => {
-  if (
-    props.mode === "bert" &&
-    topResult.value &&
-    (topResult.value.sim_bert_doc ?? 0) > 0.85 &&
-    (topResult.value.sim_bert_coverage_effective ?? topResult.value.sim_bert_coverage ?? 0) < 0.05
-  ) {
-    return "文档级语义接近，但当前局部覆盖仍有限，建议结合风险分与命中片段继续复核。";
-  }
-  if (narrativeSignal.value > 0.7) {
+  if (highestScore.value > 0.7) {
     return "检测到高风险信号，建议优先复核首位参考文档与命中片段。";
   }
-  if (narrativeSignal.value > 0.35) {
+  if (highestScore.value > 0.35) {
     return "存在中等强度重合信号，建议结合覆盖率与片段证据继续判断。";
   }
   return "当前结果整体较平稳，暂未发现明显高危相似内容。";
@@ -83,12 +60,8 @@ const heroMetrics = computed(() => {
   if (props.mode === "bert") {
     return [
       {
-        label: "综合相似",
+        label: "总分",
         value: formatScore(topResult.value.sim_bert ?? topResult.value.sim_lsa ?? 0)
-      },
-      {
-        label: "文档语义",
-        value: formatScore(topResult.value.sim_bert_doc ?? 0)
       },
       {
         label: "风险分",
@@ -128,8 +101,7 @@ const heroMetrics = computed(() => {
 const getRowMetrics = (item) => {
   if (props.mode === "bert") {
     return [
-      { label: "综合相似", value: item.sim_bert ?? item.sim_lsa ?? 0 },
-      { label: "文档语义", value: item.sim_bert_doc ?? 0 },
+      { label: "总分", value: item.sim_bert ?? item.sim_lsa ?? 0 },
       { label: "风险", value: item.sim_bert_risk ?? item.sim_bert ?? 0 },
       {
         label: "覆盖率",
@@ -150,8 +122,7 @@ const getRowMetrics = (item) => {
 const getBadges = (item) => {
   if (props.mode === "bert") {
     return [
-      { label: "综合", score: item.sim_bert ?? item.sim_lsa ?? 0 },
-      { label: "语义", score: item.sim_bert_doc ?? 0 },
+      { label: "总分", score: item.sim_bert ?? item.sim_lsa ?? 0 },
       { label: "风险", score: item.sim_bert_risk ?? item.sim_bert ?? 0 }
     ];
   }
@@ -165,9 +136,9 @@ const getBadges = (item) => {
 const getRowSummary = (item) => {
   const fragments = item.plagiarized_parts?.length || 0;
   if (props.mode === "bert") {
-    return `命中 ${fragments} 个片段，文档语义 ${formatScore(
-      item.sim_bert_doc ?? 0
-    )}，覆盖率 ${formatScore(item.sim_bert_coverage_effective ?? item.sim_bert_coverage ?? 0)}。`;
+    return `命中 ${fragments} 个片段，覆盖率 ${formatScore(
+      item.sim_bert_coverage_effective ?? item.sim_bert_coverage ?? 0
+    )}。`;
   }
   return `命中 ${fragments} 个片段，Hybrid ${formatScore(item.sim_hybrid ?? item.sim_lsa ?? 0)}。`;
 };
@@ -216,7 +187,7 @@ const getRowSummary = (item) => {
           <p class="muted-label">Current Highlight</p>
           <div class="score-flare">
             <strong>{{ formatScore(highestScore) }}</strong>
-            <span>{{ props.mode === "bert" ? "综合相似" : "风险分数" }}</span>
+            <span>{{ props.mode === "bert" ? "BERT 总分" : "风险分数" }}</span>
           </div>
           <p class="text-note">{{ summaryText }}</p>
         </div>

@@ -16,6 +16,13 @@ with st.sidebar:
     st.image("https://img.icons8.com/color/96/000000/documents.png", width=80)
     st.title("参数配置")
     
+    bert_profile = st.selectbox(
+        "BERT 阈值档位",
+        ["balanced", "strict", "recall"],
+        index=0,
+        help="balanced 为默认，strict 更低误报，recall 更高召回。"
+    )
+
     st.markdown("---")
     st.subheader("⚙️ 核心算法参数")
     engine_choice = st.radio(
@@ -170,7 +177,17 @@ if st.button("🚀 立即开始查重", type="primary", width="stretch"):
                     
                     for i, ref_text in enumerate(ref_texts):
                         # 获取基于 BERT 滑动窗口的细粒度抄袭片段
-                        plag_parts = bert_engine.sliding_window_check(target_text, ref_text)
+                        plag_parts = bert_engine.sliding_window_check(
+                            target_text,
+                            ref_text,
+                            threshold_profile=bert_profile
+                        )
+                        score_breakdown = bert_engine.score_document_pair(
+                            target_text,
+                            ref_text,
+                            plagiarized_parts=plag_parts,
+                            threshold_profile=bert_profile
+                        )
                         
                         # 【核心修正】：对于长篇文档，放弃使用池化向量计算余弦相似度（会导致同领域相似度虚高至95%+）
                         # 真正的抄袭率应该等于：所有被判定为抄袭片段的长度之和 / 目标文档总长度
@@ -182,13 +199,27 @@ if st.button("🚀 立即开始查重", type="primary", width="stretch"):
                         results.append({
                             'file': ref_paths[i],
                             'sim_lsa': real_plag_ratio, # 借用这个字段用于排序
-                            'sim_tfidf': real_plag_ratio,
-                            'sim_bert': real_plag_ratio,
+                            'sim_tfidf': float(score_breakdown['final_score']),
+                            'sim_bert': float(score_breakdown['final_score']),
+                            'sim_bert_risk': float(score_breakdown.get('risk_score', score_breakdown['final_score'])),
+                            'sim_bert_doc': float(score_breakdown['doc_semantic']),
+                            'sim_bert_doc_excess': float(score_breakdown.get('doc_semantic_excess', score_breakdown['doc_semantic'])),
+                            'sim_bert_coverage': float(score_breakdown.get('coverage_raw', score_breakdown['coverage'])),
+                            'sim_bert_coverage_weighted': float(score_breakdown.get('coverage_weighted', score_breakdown['coverage'])),
+                            'sim_bert_coverage_effective': float(score_breakdown.get('coverage_effective', score_breakdown['coverage'])),
+                            'sim_bert_confidence': float(score_breakdown['confidence']),
+                            'sim_bert_semantic_signal': float(score_breakdown.get('semantic_signal', 0.0)),
+                            'sim_bert_evidence': float(score_breakdown.get('evidence_score', 0.0)),
+                            'sim_bert_continuity_bonus': float(score_breakdown.get('continuity_bonus', 0.0)),
+                            'sim_bert_continuity_longest': float(score_breakdown.get('continuity_longest', 0.0)),
+                            'sim_bert_continuity_top3': float(score_breakdown.get('continuity_top3', 0.0)),
+                            'sim_lsa': float(score_breakdown['final_score']),
+                            'bert_profile': bert_profile,
                             'plagiarized_parts': plag_parts
                         })
                     
                     # 按相似度降序排序
-                    results.sort(key=lambda x: x['sim_lsa'], reverse=True)
+                    results.sort(key=lambda x: x['sim_bert'], reverse=True)
                     my_bar.progress(100, text="检测完成！")
                     
                 except Exception as e:
@@ -266,7 +297,11 @@ if st.button("🚀 立即开始查重", type="primary", width="stretch"):
                         df_data.append({
                             "排名": i + 1,
                             "参考文档": original_name,
-                            "BERT语义相似度": f"{res.get('sim_bert', res['sim_lsa'])*100:.2f}%"
+                            "综合相似度": f"{res.get('sim_bert', res['sim_lsa'])*100:.2f}%",
+                            "文档语义分": f"{res.get('sim_bert_doc', 0)*100:.2f}%",
+                            "风险分数": f"{res.get('sim_bert_risk', res.get('sim_bert', res['sim_lsa']))*100:.2f}%",
+                            "覆盖率": f"{res.get('sim_bert_coverage_effective', res.get('sim_bert_coverage', 0))*100:.2f}%",
+                            "置信度": f"{res.get('sim_bert_confidence', 0)*100:.2f}%"
                         })
                     else:
                         df_data.append({
