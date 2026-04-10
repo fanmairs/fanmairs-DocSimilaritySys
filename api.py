@@ -6,8 +6,10 @@ import json
 import threading
 import queue
 import time
-from fastapi import FastAPI, UploadFile, File, Form
+from pathlib import Path
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from typing import List
 
 # 导入我们项目核心类
@@ -25,6 +27,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+BASE_DIR = Path(__file__).resolve().parent
+FRONTEND_DIST_DIR = BASE_DIR / "frontend" / "dist"
+FRONTEND_INDEX_FILE = FRONTEND_DIST_DIR / "index.html"
 TEMP_DIR = "temp_uploads"
 os.makedirs(TEMP_DIR, exist_ok=True)
 
@@ -348,7 +353,44 @@ async def preview_document(file: UploadFile = File(...)):
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
+
+def _serve_frontend_path(request_path: str = ""):
+    if not FRONTEND_INDEX_FILE.exists():
+        raise HTTPException(
+            status_code=503,
+            detail="Frontend build not found. Run `npm run build` in the frontend directory first."
+        )
+
+    if request_path.startswith("api/"):
+        raise HTTPException(status_code=404, detail="API route not found")
+
+    if not request_path:
+        return FileResponse(FRONTEND_INDEX_FILE)
+
+    candidate = (FRONTEND_DIST_DIR / request_path).resolve()
+    try:
+        candidate.relative_to(FRONTEND_DIST_DIR.resolve())
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Invalid frontend asset path") from exc
+
+    if candidate.is_file():
+        return FileResponse(candidate)
+
+    return FileResponse(FRONTEND_INDEX_FILE)
+
+
+@app.get("/", include_in_schema=False)
+async def serve_frontend_index():
+    return _serve_frontend_path()
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def serve_frontend_app(full_path: str):
+    return _serve_frontend_path(full_path)
+
 if __name__ == "__main__":
     import uvicorn
     # 启动命令: uvicorn api:app --reload --host 127.0.0.1 --port 8000
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    host = os.getenv("DOCSIM_HOST", "0.0.0.0")
+    port = int(os.getenv("DOCSIM_PORT", "8000"))
+    uvicorn.run(app, host=host, port=port)
