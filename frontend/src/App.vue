@@ -1,6 +1,11 @@
 <script setup>
-import { onBeforeUnmount, ref } from "vue";
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import { api } from "./api/client";
+import {
+  cloneCoarseConfig,
+  coarseConfigDefaults,
+  sanitizeCoarseConfig
+} from "./config/coarseRetrieval";
 import HeroBanner from "./components/HeroBanner.vue";
 import ControlPanel from "./components/ControlPanel.vue";
 import ResultsPanel from "./components/ResultsPanel.vue";
@@ -11,10 +16,13 @@ const refFiles = ref([]);
 const mode = ref("bert");
 const bertProfile = ref("balanced");
 const bodyMode = ref(true);
+const defaultCoarseConfig = ref(cloneCoarseConfig(coarseConfigDefaults));
+const coarseConfig = ref(cloneCoarseConfig(coarseConfigDefaults));
 const loading = ref(false);
 const pollStatusMessage = ref("等待任务调度");
 const notice = ref("");
 const results = ref(null);
+const resultSummary = ref(null);
 const costTime = ref(0);
 
 const previewVisible = ref(false);
@@ -56,6 +64,23 @@ const clearTarget = () => {
 
 const removeRef = (index) => {
   refFiles.value.splice(index, 1);
+};
+
+const resetCoarseConfig = () => {
+  coarseConfig.value = cloneCoarseConfig(defaultCoarseConfig.value);
+};
+
+const hydrateCoarseConfigDefaults = async () => {
+  try {
+    const { data } = await api.get("/api/coarse_config_defaults");
+    if (data.status === "success" && data.defaults) {
+      const hydratedDefaults = sanitizeCoarseConfig(data.defaults);
+      defaultCoarseConfig.value = hydratedDefaults;
+      coarseConfig.value = cloneCoarseConfig(hydratedDefaults);
+    }
+  } catch (error) {
+    console.warn("Failed to load coarse retrieval defaults.", error);
+  }
 };
 
 const closePreview = () => {
@@ -119,7 +144,13 @@ const pollTask = async (taskId) => {
     if (taskStatus === "completed") {
       stopPolling();
       loading.value = false;
-      results.value = data.data || [];
+      if (Array.isArray(data.data)) {
+        results.value = data.data;
+        resultSummary.value = null;
+      } else {
+        results.value = data.data?.items || [];
+        resultSummary.value = data.data?.summary || null;
+      }
       costTime.value = data.cost_time || 0;
       setNotice("检测完成，结果已更新。");
       return;
@@ -153,6 +184,7 @@ const submitCheck = async () => {
   stopPolling();
   loading.value = true;
   results.value = null;
+  resultSummary.value = null;
   costTime.value = 0;
   pollStatusMessage.value = "任务提交中";
 
@@ -162,6 +194,12 @@ const submitCheck = async () => {
   formData.append("mode", mode.value);
   formData.append("bert_profile", bertProfile.value);
   formData.append("body_mode", bodyMode.value);
+  if (mode.value === "bert") {
+    formData.append(
+      "coarse_config",
+      JSON.stringify(sanitizeCoarseConfig(coarseConfig.value))
+    );
+  }
 
   try {
     const { data } = await api.post("/api/submit_task", formData, {
@@ -186,6 +224,10 @@ const submitCheck = async () => {
   }
 };
 
+onMounted(() => {
+  hydrateCoarseConfigDefaults();
+});
+
 onBeforeUnmount(() => {
   stopPolling();
 });
@@ -197,6 +239,7 @@ onBeforeUnmount(() => {
       :target-file="targetFile"
       :ref-files="refFiles"
       :results="results"
+      :result-summary="resultSummary"
       :mode="mode"
       :loading="loading"
       :bert-profile="bertProfile"
@@ -225,11 +268,14 @@ onBeforeUnmount(() => {
           v-model:mode="mode"
           v-model:bertProfile="bertProfile"
           v-model:bodyMode="bodyMode"
+          v-model:coarseConfig="coarseConfig"
+          :default-coarse-config="defaultCoarseConfig"
           :target-file="targetFile"
           :ref-files="refFiles"
           :loading="loading"
           :poll-status-message="pollStatusMessage"
           :notice="notice"
+          @reset-coarse-config="resetCoarseConfig"
           @target-selected="onTargetSelected"
           @refs-selected="onRefsSelected"
           @clear-target="clearTarget"
@@ -240,6 +286,7 @@ onBeforeUnmount(() => {
 
         <ResultsPanel
           :results="results"
+          :result-summary="resultSummary"
           :mode="mode"
           :cost-time="costTime"
           :loading="loading"

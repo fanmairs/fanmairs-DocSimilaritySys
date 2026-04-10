@@ -10,9 +10,12 @@ from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from typing import List
+from typing import Dict, List, Optional
+from coarse_retrieval import CoarseRetriever, CoarseRetrievalConfig
+from global_evidence import GlobalEvidenceAggregator
 
 # 导入我们项目核心类
+from coarse_retrieval import CoarseRetriever, CoarseRetrievalConfig
 from main import PlagiarismDetectorSystem
 from deep_semantic import DeepSemanticEngine
 
@@ -108,6 +111,32 @@ task_queue = queue.Queue()
 # 全局模型实例，由专属后台线程加载，避免多线程抢占显存
 bert_engine = None
 traditional_system = None
+coarse_retriever = None
+global_evidence_aggregator = None
+
+
+def _parse_coarse_config_payload(payload: Optional[str]) -> Optional[Dict[str, object]]:
+    if payload is None:
+        return None
+
+    normalized = payload.strip()
+    if not normalized:
+        return None
+
+    try:
+        raw_config = json.loads(normalized)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="coarse_config 必须是合法 JSON") from exc
+
+    if not isinstance(raw_config, dict):
+        raise HTTPException(status_code=400, detail="coarse_config 必须是 JSON 对象")
+
+    try:
+        validated = CoarseRetrievalConfig.from_partial_dict(raw_config)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return validated.to_dict()
 
 def gpu_worker():
     """
@@ -115,7 +144,7 @@ def gpu_worker():
     它的使命是：永远在后台排队取任务，确保同一时刻永远只有一个任务在占用 GPU。
     这就从根本上解决了 100 个人同时点击查重导致 3060 显存瞬间爆炸的问题！
     """
-    global bert_engine, traditional_system
+    global bert_engine, traditional_system, coarse_retriever, global_evidence_aggregator
     print(">>> [GPU 队列守护进程] 正在启动并独占加载深度学习模型...")
     bert_engine = DeepSemanticEngine()
     traditional_system = PlagiarismDetectorSystem(
@@ -126,6 +155,8 @@ def gpu_worker():
         semantic_threshold=0.55,
         semantic_weight=0.35
     )
+    coarse_retriever = CoarseRetriever(bert_engine, traditional_system.preprocessor)
+    global_evidence_aggregator = GlobalEvidenceAggregator(bert_engine)
     print(">>> [GPU 队列守护进程] 模型加载完毕，开始监听并发查重任务...")
     
     while True:
@@ -137,6 +168,7 @@ def gpu_worker():
         mode = task['mode']
         body_mode = task['body_mode']
         bert_profile = task.get('bert_profile', 'balanced')
+        coarse_config = task.get('coarse_config')
         session_dir = task['session_dir']
         
         print(f">>> [GPU Worker] 正在处理排队任务: {task_id}")
@@ -147,14 +179,56 @@ def gpu_worker():
         
         try:
             results = []
+            result_summary = None
             if mode == "bert":
                 # 深度语义引擎检测逻辑
+                task_coarse_retriever = coarse_retriever.with_config(coarse_config)
                 target_text = traditional_system.read_document(target_path)
-                if body_mode: target_text = traditional_system.clean_academic_noise(target_text)
-                    
+                if body_mode:
+                    target_text = traditional_system.clean_academic_noise(target_text)
+
+                reference_payloads = []
+                reference_text_map = {}
                 for ref_path in ref_paths:
                     ref_text = traditional_system.read_document(ref_path)
-                    if body_mode: ref_text = traditional_system.clean_academic_noise(ref_text)
+                    if body_mode:
+                        ref_text = traditional_system.clean_academic_noise(ref_text)
+                    reference_payloads.append({
+                        "path": ref_path,
+                        "text": ref_text,
+                    })
+                    reference_text_map[ref_path] = ref_text
+
+                target_context = task_coarse_retriever.build_target_context(target_text)
+                reference_contexts = task_coarse_retriever.build_reference_contexts(reference_payloads)
+                ranked_refs, selection_meta = task_coarse_retriever.rank_references(
+                    target_context,
+                    reference_contexts,
+                )
+                ranked_ref_map = {item["path"]: item for item in ranked_refs}
+                candidate_ref_paths = [
+                    item["path"]
+                    for item in ranked_refs
+                    if item.get("is_candidate", False)
+                ]
+                coarse_only_results = [
+                    task_coarse_retriever.build_coarse_only_result(item, bert_profile)
+                    for item in ranked_refs
+                    if not item.get("is_candidate", False)
+                ]
+                verified_results = []
+                print(
+                    ">>> [BGE][Coarse] "
+                    f"references={len(reference_payloads)} "
+                    f"candidates={selection_meta['candidate_count']} "
+                    f"candidate_limit={selection_meta['candidate_limit']} "
+                    f"topic_concentrated={selection_meta['topic_concentrated']} "
+                    f"theme_mean={selection_meta['theme_mean']:.4f} "
+                    f"theme_std={selection_meta['theme_std']:.4f}"
+                )
+
+                for ref_path in candidate_ref_paths:
+                    ref_text = reference_text_map[ref_path]
                     
                     plagiarized_parts = bert_engine.sliding_window_check(
                         target_text,
@@ -170,6 +244,7 @@ def gpu_worker():
                     print(
                         ">>> [BGE][Score] "
                         f"file={os.path.basename(ref_path)} "
+                        "stage=fine "
                         f"final={score_breakdown['final_score']:.4f} "
                         f"risk={score_breakdown.get('risk_score', score_breakdown['final_score']):.4f} "
                         f"doc={score_breakdown['doc_semantic']:.4f} "
@@ -183,7 +258,7 @@ def gpu_worker():
                         f"hits={score_breakdown['hit_count']}"
                     )
                     
-                    results.append({
+                    verified_result = {
                         "file": os.path.basename(ref_path).replace("ref_", ""),
                         # Backward-compatible field: now mapped to the composite BGE similarity score.
                         "sim_bert": float(score_breakdown["final_score"]),
@@ -208,7 +283,35 @@ def gpu_worker():
                         "sim_bert_legacy_coverage": float(score_breakdown.get("coverage_raw", score_breakdown["coverage"])),
                         "bert_profile": bert_profile,
                         "plagiarized_parts": plagiarized_parts
-                    })
+                    }
+                    verified_result.update(
+                        task_coarse_retriever.build_verified_result(
+                            ranked_ref_map[ref_path],
+                            bert_profile,
+                            score_breakdown,
+                            plagiarized_parts,
+                        )
+                    )
+                    results.append(verified_result)
+                    verified_results.append(verified_result)
+
+                result_summary = global_evidence_aggregator.aggregate(
+                    target_text,
+                    verified_results,
+                    bert_profile=bert_profile,
+                    reference_count=len(reference_payloads),
+                    candidate_count=selection_meta.get("candidate_count"),
+                )
+                print(
+                    ">>> [BGE][Global] "
+                    f"score={result_summary['global_score']:.4f} "
+                    f"coverage={result_summary['global_coverage_effective']:.4f} "
+                    f"confidence={result_summary['global_confidence']:.4f} "
+                    f"source_diversity={result_summary['global_source_diversity']:.4f} "
+                    f"verified_sources={result_summary['global_verified_source_count']}"
+                )
+
+                results.extend(coarse_only_results)
                 results.sort(key=lambda x: x['sim_bert'], reverse=True)
                 
             else:
@@ -227,7 +330,11 @@ def gpu_worker():
             
             # 计算耗时并写入数据库
             cost_time = time.time() - start_time
-            update_task(task_id, "completed", result=json.dumps(results), cost_time=cost_time)
+            result_payload = {
+                "items": results,
+                "summary": result_summary,
+            }
+            update_task(task_id, "completed", result=json.dumps(result_payload), cost_time=cost_time)
             print(f">>> [GPU Worker] 任务圆满完成: {task_id} (耗时: {cost_time:.2f}秒)")
             
         except Exception as e:
@@ -255,7 +362,8 @@ async def submit_task(
     reference_files: List[UploadFile] = File(...),
     mode: str = Form("bert"),
     body_mode: bool = Form(False),
-    bert_profile: str = Form("balanced")
+    bert_profile: str = Form("balanced"),
+    coarse_config: str = Form("")
 ):
     """
     【非阻塞提交接口】
@@ -288,6 +396,7 @@ async def submit_task(
     safe_profile = (bert_profile or "balanced").strip().lower()
     if safe_profile not in {"strict", "balanced", "recall"}:
         safe_profile = "balanced"
+    safe_coarse_config = _parse_coarse_config_payload(coarse_config)
 
     task_queue.put({
         'id': task_id,
@@ -296,6 +405,7 @@ async def submit_task(
         'mode': mode,
         'body_mode': body_mode,
         'bert_profile': safe_profile,
+        'coarse_config': safe_coarse_config,
         'session_dir': session_dir
     })
     
@@ -306,6 +416,14 @@ async def submit_task(
         "queue_length": queue_length,
         "message": f"任务已提交！前面还有 {queue_length - 1} 个人在排队..." if queue_length > 1 else "任务已提交！即将开始计算..."
     }
+
+@app.get("/api/coarse_config_defaults")
+async def coarse_config_defaults():
+    return {
+        "status": "success",
+        "defaults": CoarseRetrievalConfig().normalized().to_dict(),
+    }
+
 
 @app.get("/api/task_status/{task_id}")
 async def check_task_status(task_id: str):

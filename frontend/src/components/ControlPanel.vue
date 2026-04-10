@@ -1,5 +1,12 @@
 <script setup>
 import { computed, ref } from "vue";
+import {
+  cloneCoarseConfig,
+  coarseConfigGroups,
+  coarseConfigPresets,
+  customCoarseConfigGuide,
+  detectCoarseConfigPreset
+} from "../config/coarseRetrieval";
 
 const props = defineProps({
   targetFile: {
@@ -22,6 +29,14 @@ const props = defineProps({
     type: Boolean,
     default: true
   },
+  coarseConfig: {
+    type: Object,
+    default: () => ({})
+  },
+  defaultCoarseConfig: {
+    type: Object,
+    default: () => ({})
+  },
   loading: {
     type: Boolean,
     default: false
@@ -40,6 +55,8 @@ const emit = defineEmits([
   "update:mode",
   "update:bertProfile",
   "update:bodyMode",
+  "update:coarseConfig",
+  "reset-coarse-config",
   "target-selected",
   "refs-selected",
   "clear-target",
@@ -50,6 +67,21 @@ const emit = defineEmits([
 
 const targetInputRef = ref(null);
 const refInputRef = ref(null);
+const coarseFieldGroups = coarseConfigGroups;
+const coarsePresetOptions = computed(() =>
+  coarseConfigPresets.map((preset) =>
+    preset.key === "balanced"
+      ? {
+          ...preset,
+          config: cloneCoarseConfig(
+            Object.keys(props.defaultCoarseConfig || {}).length
+              ? props.defaultCoarseConfig
+              : preset.config
+          )
+        }
+      : preset
+  )
+);
 
 const modeOptions = [
   {
@@ -96,6 +128,41 @@ const bodyModeModel = computed({
   get: () => props.bodyMode,
   set: (value) => emit("update:bodyMode", value)
 });
+
+const activeCoarsePreset = computed(
+  () => detectCoarseConfigPreset(props.coarseConfig, coarsePresetOptions.value)
+);
+
+const activeCoarsePresetLabel = computed(
+  () => activeCoarsePreset.value?.label || "自定义"
+);
+
+const activeCoarsePresetGuide = computed(
+  () => activeCoarsePreset.value || customCoarseConfigGuide
+);
+
+const updateCoarseConfigField = (field, event) => {
+  const rawValue = event.target.value;
+  const numericValue =
+    field.type === "int" ? parseInt(rawValue, 10) : parseFloat(rawValue);
+
+  if (!Number.isFinite(numericValue)) {
+    return;
+  }
+
+  emit("update:coarseConfig", {
+    ...props.coarseConfig,
+    [field.key]: numericValue
+  });
+};
+
+const applyCoarsePreset = (preset) => {
+  emit("update:coarseConfig", cloneCoarseConfig(preset.config));
+};
+
+const resetCoarseConfig = () => {
+  emit("reset-coarse-config");
+};
 
 const sessionState = computed(() => {
   if (props.loading) {
@@ -286,6 +353,124 @@ const submit = () => {
             <span>{{ option.description }}</span>
           </button>
         </div>
+      </div>
+
+      <div v-if="modeModel === 'bert'" class="setting-group">
+        <div class="setting-head">
+          <p class="muted-label">Coarse Retrieval</p>
+          <h3 class="setting-title">粗筛策略与参数</h3>
+        </div>
+
+        <div class="preset-band">
+          <div class="preset-band__head">
+            <div>
+              <p class="muted-label">Strategy Presets</p>
+              <h4 class="preset-band__title">粗筛策略预设</h4>
+            </div>
+            <span
+              class="preset-state"
+              :class="{ 'preset-state--custom': !activeCoarsePreset }"
+            >
+              当前档位: {{ activeCoarsePresetLabel }}
+            </span>
+          </div>
+
+          <div class="preset-chip-row">
+            <button
+              v-for="preset in coarsePresetOptions"
+              :key="preset.key"
+              class="preset-chip"
+              :class="{
+                'preset-chip--active': activeCoarsePreset?.key === preset.key
+              }"
+              type="button"
+              @click="applyCoarsePreset(preset)"
+            >
+              <strong>{{ preset.label }}</strong>
+              <span>{{ preset.description }}</span>
+            </button>
+          </div>
+
+          <article class="preset-guide">
+            <div class="preset-guide__head">
+              <div>
+                <p class="muted-label">Preset Guide</p>
+                <h5>{{ activeCoarsePresetGuide.label }}使用说明</h5>
+              </div>
+              <span class="preset-guide__focus">
+                {{ activeCoarsePresetGuide.priority }}
+              </span>
+            </div>
+
+            <p class="preset-guide__description">
+              {{ activeCoarsePresetGuide.description }}
+            </p>
+
+            <div class="preset-guide__grid">
+              <article class="preset-guide__card">
+                <span>适合场景</span>
+                <strong>{{ activeCoarsePresetGuide.bestFor }}</strong>
+              </article>
+              <article class="preset-guide__card">
+                <span>策略取向</span>
+                <strong>{{ activeCoarsePresetGuide.priority }}</strong>
+              </article>
+            </div>
+
+            <div class="preset-guide__chips">
+              <span
+                v-for="change in activeCoarsePresetGuide.changes"
+                :key="change"
+                class="preset-guide__chip"
+              >
+                {{ change }}
+              </span>
+            </div>
+          </article>
+        </div>
+
+        <details class="coarse-config-shell">
+          <summary class="coarse-config-summary">
+            <div>
+              <strong>先选策略预设，再按需要微调候选池、阈值和同题扩容规则</strong>
+              <span>如果你手动修改下面的任一参数，当前档位会自动切换成“自定义方案”。</span>
+            </div>
+            <button class="btn-ghost" type="button" @click.prevent="resetCoarseConfig">
+              恢复默认
+            </button>
+          </summary>
+
+          <div class="coarse-config-groups">
+            <article
+              v-for="group in coarseFieldGroups"
+              :key="group.key"
+              class="coarse-config-card"
+            >
+              <div class="coarse-config-card__head">
+                <h4>{{ group.title }}</h4>
+                <p>{{ group.description }}</p>
+              </div>
+
+              <div class="coarse-config-grid">
+                <label
+                  v-for="field in group.fields"
+                  :key="field.key"
+                  class="coarse-config-field"
+                >
+                  <span>{{ field.label }}</span>
+                  <input
+                    :value="props.coarseConfig[field.key]"
+                    type="number"
+                    :min="field.min"
+                    :max="field.max"
+                    :step="field.step"
+                    @input="updateCoarseConfigField(field, $event)"
+                  />
+                </label>
+              </div>
+            </article>
+          </div>
+        </details>
       </div>
 
       <div class="setting-group">

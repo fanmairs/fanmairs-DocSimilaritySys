@@ -14,6 +14,10 @@ const props = defineProps({
     type: Array,
     default: null
   },
+  resultSummary: {
+    type: Object,
+    default: null
+  },
   mode: {
     type: String,
     default: "bert"
@@ -58,6 +62,10 @@ const targetLabel = computed(() => {
 });
 
 const topScore = computed(() => {
+  if (props.mode === "bert" && props.resultSummary) {
+    return props.resultSummary.global_score ?? 0;
+  }
+
   if (!Array.isArray(props.results) || !props.results.length) {
     return 0.82;
   }
@@ -76,7 +84,7 @@ const signalBars = computed(() => {
     return [0.36, 0.54, 0.7, 0.48, 0.82, 0.58];
   }
 
-  return props.results
+  const rowBars = props.results
     .slice(0, 6)
     .map((item) => {
       if (props.mode === "bert") {
@@ -84,6 +92,18 @@ const signalBars = computed(() => {
       }
       return item.risk_score ?? item.sim_hybrid ?? item.sim_lsa ?? 0;
     });
+
+  if (props.mode === "bert" && props.resultSummary) {
+    return [
+      props.resultSummary.global_score ?? 0,
+      props.resultSummary.global_coverage_effective ?? 0,
+      props.resultSummary.global_confidence ?? 0,
+      props.resultSummary.global_source_diversity ?? 0,
+      ...rowBars,
+    ].slice(0, 6);
+  }
+
+  return rowBars;
 });
 </script>
 

@@ -7,6 +7,10 @@ const props = defineProps({
     type: Array,
     default: null
   },
+  resultSummary: {
+    type: Object,
+    default: null
+  },
   mode: {
     type: String,
     default: "bert"
@@ -28,8 +32,13 @@ const props = defineProps({
 const hasResults = computed(() => Array.isArray(props.results));
 const resultRows = computed(() => props.results || []);
 const topResult = computed(() => resultRows.value[0] || null);
+const activeSummary = computed(() => (props.mode === "bert" ? props.resultSummary : null));
 
 const highestScore = computed(() => {
+  if (activeSummary.value) {
+    return activeSummary.value.global_score ?? 0;
+  }
+
   if (!topResult.value) {
     return 0;
   }
@@ -41,6 +50,13 @@ const highestScore = computed(() => {
 });
 
 const narrativeSignal = computed(() => {
+  if (activeSummary.value) {
+    return Math.max(
+      activeSummary.value.global_score ?? 0,
+      activeSummary.value.global_coverage_effective ?? 0
+    );
+  }
+
   if (!topResult.value) {
     return 0;
   }
@@ -56,6 +72,23 @@ const narrativeSignal = computed(() => {
 });
 
 const summaryText = computed(() => {
+  if (activeSummary.value) {
+    if (
+      (activeSummary.value.global_source_diversity ?? 0) > 0.45 &&
+      (activeSummary.value.global_verified_source_count ?? 0) >= 2 &&
+      (activeSummary.value.global_coverage_effective ?? 0) > 0.08
+    ) {
+      return "当前全局总分已经综合了多个参考来源的细检证据，存在多来源覆盖同一目标文档的风险，建议优先复核命中片段与来源分布。";
+    }
+    if (narrativeSignal.value > 0.7) {
+      return "当前全局总分处于高风险区间，说明候选细检证据在去重后仍形成了较强覆盖与连续命中，建议优先复核。";
+    }
+    if (narrativeSignal.value > 0.35) {
+      return "当前全局总分处于中等风险区间，建议结合去重覆盖率、证据置信度和多来源分布继续判断。";
+    }
+    return "当前全局总分整体较低，细检证据在去重后尚未形成明显高风险覆盖，可继续参考单篇结果做补充复核。";
+  }
+
   if (
     props.mode === "bert" &&
     topResult.value &&
@@ -76,6 +109,31 @@ const summaryText = computed(() => {
 const formatScore = (value) => `${((value || 0) * 100).toFixed(2)}%`;
 
 const heroMetrics = computed(() => {
+  if (activeSummary.value) {
+    return [
+      {
+        label: "全局总分",
+        value: formatScore(activeSummary.value.global_score ?? 0)
+      },
+      {
+        label: "去重覆盖",
+        value: formatScore(activeSummary.value.global_coverage_effective ?? 0)
+      },
+      {
+        label: "证据置信",
+        value: formatScore(activeSummary.value.global_confidence ?? 0)
+      },
+      {
+        label: "连续命中",
+        value: formatScore(activeSummary.value.global_continuity_top3 ?? 0)
+      },
+      {
+        label: "来源分散",
+        value: formatScore(activeSummary.value.global_source_diversity ?? 0)
+      }
+    ];
+  }
+
   if (!topResult.value) {
     return [];
   }
@@ -127,6 +185,15 @@ const heroMetrics = computed(() => {
 
 const getRowMetrics = (item) => {
   if (props.mode === "bert") {
+    if (item.retrieval_stage === "coarse_only") {
+      return [
+        { label: "粗筛分", value: item.sim_bert_coarse ?? item.sim_bert ?? 0 },
+        { label: "全文语义", value: item.sim_bert_coarse_doc ?? item.sim_bert_doc ?? 0 },
+        { label: "段落热点", value: item.sim_bert_coarse_para ?? 0 },
+        { label: "词面锚点", value: item.sim_bert_coarse_lex ?? 0 }
+      ];
+    }
+
     return [
       { label: "综合相似", value: item.sim_bert ?? item.sim_lsa ?? 0 },
       { label: "文档语义", value: item.sim_bert_doc ?? 0 },
@@ -149,6 +216,14 @@ const getRowMetrics = (item) => {
 
 const getBadges = (item) => {
   if (props.mode === "bert") {
+    if (item.retrieval_stage === "coarse_only") {
+      return [
+        { label: "粗筛", score: item.sim_bert_coarse ?? item.sim_bert ?? 0 },
+        { label: "语义", score: item.sim_bert_coarse_doc ?? item.sim_bert_doc ?? 0 },
+        { label: "热点", score: item.sim_bert_coarse_para ?? 0 }
+      ];
+    }
+
     return [
       { label: "综合", score: item.sim_bert ?? item.sim_lsa ?? 0 },
       { label: "语义", score: item.sim_bert_doc ?? 0 },
@@ -165,6 +240,14 @@ const getBadges = (item) => {
 const getRowSummary = (item) => {
   const fragments = item.plagiarized_parts?.length || 0;
   if (props.mode === "bert") {
+    if (item.retrieval_stage === "coarse_only") {
+      return `粗筛排序结果，未进入细粒度复核。全文语义 ${formatScore(
+        item.sim_bert_coarse_doc ?? item.sim_bert_doc ?? 0
+      )}，段落热点 ${formatScore(item.sim_bert_coarse_para ?? 0)}，词面锚点 ${formatScore(
+        item.sim_bert_coarse_lex ?? 0
+      )}。`;
+    }
+
     return `命中 ${fragments} 个片段，文档语义 ${formatScore(
       item.sim_bert_doc ?? 0
     )}，覆盖率 ${formatScore(item.sim_bert_coverage_effective ?? item.sim_bert_coverage ?? 0)}。`;
@@ -213,10 +296,10 @@ const getRowSummary = (item) => {
     <template v-else>
       <section class="results-hero">
         <div class="results-hero__lead">
-          <p class="muted-label">Current Highlight</p>
+          <p class="muted-label">{{ activeSummary ? "Global Summary" : "Current Highlight" }}</p>
           <div class="score-flare">
             <strong>{{ formatScore(highestScore) }}</strong>
-            <span>{{ props.mode === "bert" ? "综合相似" : "风险分数" }}</span>
+            <span>{{ activeSummary ? "全局总分" : props.mode === "bert" ? "综合相似" : "风险分数" }}</span>
           </div>
           <p class="text-note">{{ summaryText }}</p>
         </div>
