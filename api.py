@@ -15,7 +15,6 @@ from coarse_retrieval import CoarseRetriever, CoarseRetrievalConfig
 from global_evidence import GlobalEvidenceAggregator
 
 # 导入我们项目核心类
-from coarse_retrieval import CoarseRetriever, CoarseRetrievalConfig
 from main import PlagiarismDetectorSystem
 from deep_semantic import DeepSemanticEngine
 
@@ -114,6 +113,15 @@ traditional_system = None
 coarse_retriever = None
 global_evidence_aggregator = None
 
+BGE_STRATEGY_COARSE = "coarse_then_fine"
+BGE_STRATEGY_FULL = "full_fine"
+BGE_STRATEGIES = {BGE_STRATEGY_COARSE, BGE_STRATEGY_FULL}
+
+
+def _resolve_bge_strategy(value: Optional[str]) -> str:
+    normalized = (value or BGE_STRATEGY_COARSE).strip().lower()
+    return normalized if normalized in BGE_STRATEGIES else BGE_STRATEGY_COARSE
+
 
 def _parse_coarse_config_payload(payload: Optional[str]) -> Optional[Dict[str, object]]:
     if payload is None:
@@ -137,6 +145,111 @@ def _parse_coarse_config_payload(payload: Optional[str]) -> Optional[Dict[str, o
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return validated.to_dict()
+
+
+def _run_bert_fine_verification(ref_path: str, target_text: str, ref_text: str, bert_profile: str):
+    plagiarized_parts = bert_engine.sliding_window_check(
+        target_text,
+        ref_text,
+        threshold_profile=bert_profile
+    )
+    score_breakdown = bert_engine.score_document_pair(
+        target_text,
+        ref_text,
+        plagiarized_parts=plagiarized_parts,
+        threshold_profile=bert_profile
+    )
+    print(
+        ">>> [BGE][Score] "
+        f"file={os.path.basename(ref_path)} "
+        "stage=fine "
+        f"final={score_breakdown['final_score']:.4f} "
+        f"risk={score_breakdown.get('risk_score', score_breakdown['final_score']):.4f} "
+        f"doc={score_breakdown['doc_semantic']:.4f} "
+        f"doc_ex={score_breakdown.get('doc_semantic_excess', score_breakdown['doc_semantic']):.4f} "
+        f"cov={score_breakdown['coverage']:.4f} "
+        f"cov_eff={score_breakdown.get('coverage_effective', score_breakdown['coverage']):.4f} "
+        f"cov_w={score_breakdown.get('coverage_weighted', score_breakdown['coverage']):.4f} "
+        f"conf={score_breakdown['confidence']:.4f} "
+        f"base={score_breakdown['base_score']:.4f} "
+        f"gate={score_breakdown['gate']:.4f} "
+        f"hits={score_breakdown['hit_count']}"
+    )
+    return plagiarized_parts, score_breakdown
+
+
+def _build_basic_bert_result(ref_path: str, bert_profile: str, score_breakdown: Dict[str, float], plagiarized_parts: List[Dict[str, object]]) -> Dict[str, object]:
+    return {
+        "file": os.path.basename(ref_path).replace("ref_", ""),
+        # Backward-compatible field: now mapped to the composite BGE similarity score.
+        "sim_bert": float(score_breakdown["final_score"]),
+        "sim_bert_risk": float(score_breakdown.get("risk_score", score_breakdown["final_score"])),
+        "sim_bert_doc": float(score_breakdown["doc_semantic"]),
+        "sim_bert_doc_excess": float(score_breakdown.get("doc_semantic_excess", score_breakdown["doc_semantic"])),
+        "sim_bert_coverage": float(score_breakdown["coverage"]),
+        "sim_bert_coverage_raw": float(score_breakdown.get("coverage_raw", score_breakdown["coverage"])),
+        "sim_bert_coverage_weighted": float(score_breakdown.get("coverage_weighted", score_breakdown["coverage"])),
+        "sim_bert_coverage_effective": float(score_breakdown.get("coverage_effective", score_breakdown["coverage"])),
+        "sim_bert_confidence": float(score_breakdown["confidence"]),
+        "sim_bert_base": float(score_breakdown["base_score"]),
+        "sim_bert_gate": float(score_breakdown["gate"]),
+        "sim_bert_hits": int(score_breakdown["hit_count"]),
+        "sim_bert_semantic_signal": float(score_breakdown.get("semantic_signal", 0.0)),
+        "sim_bert_evidence": float(score_breakdown.get("evidence_score", 0.0)),
+        "sim_bert_continuity_bonus": float(score_breakdown.get("continuity_bonus", 0.0)),
+        "sim_bert_continuity_longest": float(score_breakdown.get("continuity_longest", 0.0)),
+        "sim_bert_continuity_top3": float(score_breakdown.get("continuity_top3", 0.0)),
+        "sim_bert_low_evidence_cap": float(score_breakdown.get("low_evidence_cap", 1.0)),
+        # Explicit macro coverage field for downstream display/debug.
+        "sim_bert_legacy_coverage": float(score_breakdown.get("coverage_raw", score_breakdown["coverage"])),
+        "sim_bert_verified": True,
+        "sim_bert_candidate": True,
+        "bert_profile": bert_profile,
+        "retrieval_stage": "fine_verified",
+        "plagiarized_parts": plagiarized_parts,
+    }
+
+
+def _estimate_text_window_count(text: str) -> int:
+    normalized = DeepSemanticEngine._normalize_text(text)
+    if not normalized:
+        return 0
+    return len(bert_engine._build_windows(normalized))
+
+
+def _window_scale_level(pair_count: int) -> str:
+    if pair_count >= 50000:
+        return "large"
+    if pair_count >= 12000:
+        return "medium"
+    return "small"
+
+
+def _window_recommendation(pair_count: int, reference_count: int) -> Dict[str, str]:
+    scale_level = _window_scale_level(pair_count)
+    if scale_level == "small" and reference_count <= 12:
+        return {
+            "strategy": BGE_STRATEGY_FULL,
+            "label": "建议完整细检",
+            "message": "当前窗口规模较小，完整细检的等待成本可控，更适合追求结果完整性。",
+        }
+    if scale_level == "medium":
+        return {
+            "strategy": BGE_STRATEGY_COARSE,
+            "label": "建议粗筛后细检",
+            "message": "当前窗口规模已经明显上升，粗筛后细检可以降低等待时间。",
+        }
+    if scale_level == "large":
+        return {
+            "strategy": BGE_STRATEGY_COARSE,
+            "label": "强烈建议粗筛后细检",
+            "message": "当前全量细检矩阵较大，完整模式可能等待较久，建议先粗筛候选。",
+        }
+    return {
+        "strategy": BGE_STRATEGY_COARSE,
+        "label": "建议粗筛后细检",
+        "message": "参考文档数量较多，建议用粗筛保留可疑来源，再进入细粒度复核。",
+    }
 
 def gpu_worker():
     """
@@ -168,6 +281,7 @@ def gpu_worker():
         mode = task['mode']
         body_mode = task['body_mode']
         bert_profile = task.get('bert_profile', 'balanced')
+        bge_strategy = task.get('bge_strategy', BGE_STRATEGY_COARSE)
         coarse_config = task.get('coarse_config')
         session_dir = task['session_dir']
         
@@ -182,7 +296,6 @@ def gpu_worker():
             result_summary = None
             if mode == "bert":
                 # 深度语义引擎检测逻辑
-                task_coarse_retriever = coarse_retriever.with_config(coarse_config)
                 target_text = traditional_system.read_document(target_path)
                 if body_mode:
                     target_text = traditional_system.clean_academic_noise(target_text)
@@ -199,108 +312,119 @@ def gpu_worker():
                     })
                     reference_text_map[ref_path] = ref_text
 
-                target_context = task_coarse_retriever.build_target_context(target_text)
-                reference_contexts = task_coarse_retriever.build_reference_contexts(reference_payloads)
-                ranked_refs, selection_meta = task_coarse_retriever.rank_references(
-                    target_context,
-                    reference_contexts,
-                )
-                ranked_ref_map = {item["path"]: item for item in ranked_refs}
-                candidate_ref_paths = [
-                    item["path"]
-                    for item in ranked_refs
-                    if item.get("is_candidate", False)
-                ]
-                coarse_only_results = [
-                    task_coarse_retriever.build_coarse_only_result(item, bert_profile)
-                    for item in ranked_refs
-                    if not item.get("is_candidate", False)
-                ]
                 verified_results = []
+                coarse_only_results = []
+                candidate_count = len(reference_payloads)
+
                 print(
-                    ">>> [BGE][Coarse] "
-                    f"references={len(reference_payloads)} "
-                    f"candidates={selection_meta['candidate_count']} "
-                    f"candidate_limit={selection_meta['candidate_limit']} "
-                    f"topic_concentrated={selection_meta['topic_concentrated']} "
-                    f"theme_mean={selection_meta['theme_mean']:.4f} "
-                    f"theme_std={selection_meta['theme_std']:.4f}"
+                    ">>> [BGE][Strategy] "
+                    f"strategy={bge_strategy} references={len(reference_payloads)}"
                 )
 
-                for ref_path in candidate_ref_paths:
-                    ref_text = reference_text_map[ref_path]
-                    
-                    plagiarized_parts = bert_engine.sliding_window_check(
-                        target_text,
-                        ref_text,
-                        threshold_profile=bert_profile
+                if bge_strategy == BGE_STRATEGY_COARSE:
+                    task_coarse_retriever = coarse_retriever.with_config(coarse_config)
+                    target_context = task_coarse_retriever.build_target_context(target_text)
+                    reference_contexts = task_coarse_retriever.build_reference_contexts(reference_payloads)
+                    ranked_refs, selection_meta = task_coarse_retriever.rank_references(
+                        target_context,
+                        reference_contexts,
                     )
-                    score_breakdown = bert_engine.score_document_pair(
-                        target_text,
-                        ref_text,
-                        plagiarized_parts=plagiarized_parts,
-                        threshold_profile=bert_profile
-                    )
+                    ranked_ref_map = {item["path"]: item for item in ranked_refs}
+                    candidate_ref_paths = [
+                        item["path"]
+                        for item in ranked_refs
+                        if item.get("is_candidate", False)
+                    ]
+                    coarse_only_results = [
+                        task_coarse_retriever.build_coarse_only_result(item, bert_profile)
+                        for item in ranked_refs
+                        if not item.get("is_candidate", False)
+                    ]
+                    for item in coarse_only_results:
+                        item["retrieval_strategy"] = bge_strategy
+
+                    candidate_count = int(selection_meta.get("candidate_count", len(candidate_ref_paths)))
                     print(
-                        ">>> [BGE][Score] "
-                        f"file={os.path.basename(ref_path)} "
-                        "stage=fine "
-                        f"final={score_breakdown['final_score']:.4f} "
-                        f"risk={score_breakdown.get('risk_score', score_breakdown['final_score']):.4f} "
-                        f"doc={score_breakdown['doc_semantic']:.4f} "
-                        f"doc_ex={score_breakdown.get('doc_semantic_excess', score_breakdown['doc_semantic']):.4f} "
-                        f"cov={score_breakdown['coverage']:.4f} "
-                        f"cov_eff={score_breakdown.get('coverage_effective', score_breakdown['coverage']):.4f} "
-                        f"cov_w={score_breakdown.get('coverage_weighted', score_breakdown['coverage']):.4f} "
-                        f"conf={score_breakdown['confidence']:.4f} "
-                        f"base={score_breakdown['base_score']:.4f} "
-                        f"gate={score_breakdown['gate']:.4f} "
-                        f"hits={score_breakdown['hit_count']}"
+                        ">>> [BGE][Coarse] "
+                        f"references={len(reference_payloads)} "
+                        f"candidates={selection_meta['candidate_count']} "
+                        f"candidate_limit={selection_meta['candidate_limit']} "
+                        f"topic_concentrated={selection_meta['topic_concentrated']} "
+                        f"theme_mean={selection_meta['theme_mean']:.4f} "
+                        f"theme_std={selection_meta['theme_std']:.4f}"
                     )
-                    
-                    verified_result = {
-                        "file": os.path.basename(ref_path).replace("ref_", ""),
-                        # Backward-compatible field: now mapped to the composite BGE similarity score.
-                        "sim_bert": float(score_breakdown["final_score"]),
-                        "sim_bert_risk": float(score_breakdown.get("risk_score", score_breakdown["final_score"])),
-                        "sim_bert_doc": float(score_breakdown["doc_semantic"]),
-                        "sim_bert_doc_excess": float(score_breakdown.get("doc_semantic_excess", score_breakdown["doc_semantic"])),
-                        "sim_bert_coverage": float(score_breakdown["coverage"]),
-                        "sim_bert_coverage_raw": float(score_breakdown.get("coverage_raw", score_breakdown["coverage"])),
-                        "sim_bert_coverage_weighted": float(score_breakdown.get("coverage_weighted", score_breakdown["coverage"])),
-                        "sim_bert_coverage_effective": float(score_breakdown.get("coverage_effective", score_breakdown["coverage"])),
-                        "sim_bert_confidence": float(score_breakdown["confidence"]),
-                        "sim_bert_base": float(score_breakdown["base_score"]),
-                        "sim_bert_gate": float(score_breakdown["gate"]),
-                        "sim_bert_hits": int(score_breakdown["hit_count"]),
-                        "sim_bert_semantic_signal": float(score_breakdown.get("semantic_signal", 0.0)),
-                        "sim_bert_evidence": float(score_breakdown.get("evidence_score", 0.0)),
-                        "sim_bert_continuity_bonus": float(score_breakdown.get("continuity_bonus", 0.0)),
-                        "sim_bert_continuity_longest": float(score_breakdown.get("continuity_longest", 0.0)),
-                        "sim_bert_continuity_top3": float(score_breakdown.get("continuity_top3", 0.0)),
-                        "sim_bert_low_evidence_cap": float(score_breakdown.get("low_evidence_cap", 1.0)),
-                        # Explicit macro coverage field for downstream display/debug.
-                        "sim_bert_legacy_coverage": float(score_breakdown.get("coverage_raw", score_breakdown["coverage"])),
-                        "bert_profile": bert_profile,
-                        "plagiarized_parts": plagiarized_parts
-                    }
-                    verified_result.update(
-                        task_coarse_retriever.build_verified_result(
-                            ranked_ref_map[ref_path],
+
+                    for ref_path in candidate_ref_paths:
+                        ref_text = reference_text_map[ref_path]
+                        plagiarized_parts, score_breakdown = _run_bert_fine_verification(
+                            ref_path,
+                            target_text,
+                            ref_text,
+                            bert_profile,
+                        )
+                        verified_result = _build_basic_bert_result(
+                            ref_path,
                             bert_profile,
                             score_breakdown,
                             plagiarized_parts,
                         )
+                        verified_result.update(
+                            task_coarse_retriever.build_verified_result(
+                                ranked_ref_map[ref_path],
+                                bert_profile,
+                                score_breakdown,
+                                plagiarized_parts,
+                            )
+                        )
+                        verified_result["retrieval_strategy"] = bge_strategy
+                        results.append(verified_result)
+                        verified_results.append(verified_result)
+                else:
+                    candidate_ref_paths = ref_paths
+                    candidate_count = len(candidate_ref_paths)
+                    print(
+                        ">>> [BGE][FullFine] "
+                        f"references={len(reference_payloads)} "
+                        "candidates=all"
                     )
-                    results.append(verified_result)
-                    verified_results.append(verified_result)
+
+                    for index, ref_path in enumerate(candidate_ref_paths, start=1):
+                        ref_text = reference_text_map[ref_path]
+                        plagiarized_parts, score_breakdown = _run_bert_fine_verification(
+                            ref_path,
+                            target_text,
+                            ref_text,
+                            bert_profile,
+                        )
+                        verified_result = _build_basic_bert_result(
+                            ref_path,
+                            bert_profile,
+                            score_breakdown,
+                            plagiarized_parts,
+                        )
+                        verified_result.update(
+                            {
+                                "sim_bert_candidate_rank": index,
+                                "sim_bert_coarse_rank": None,
+                                "retrieval_strategy": bge_strategy,
+                                "retrieval_reason": "full_fine",
+                                "retrieval_candidate_pool_size": len(candidate_ref_paths),
+                                "retrieval_reference_count": len(reference_payloads),
+                                "retrieval_theme_mean": 0.0,
+                                "retrieval_theme_std": 0.0,
+                                "retrieval_topic_concentrated": False,
+                            }
+                        )
+                        results.append(verified_result)
+                        verified_results.append(verified_result)
 
                 result_summary = global_evidence_aggregator.aggregate(
                     target_text,
                     verified_results,
                     bert_profile=bert_profile,
                     reference_count=len(reference_payloads),
-                    candidate_count=selection_meta.get("candidate_count"),
+                    candidate_count=candidate_count,
+                    retrieval_strategy=bge_strategy,
                 )
                 print(
                     ">>> [BGE][Global] "
@@ -363,6 +487,7 @@ async def submit_task(
     mode: str = Form("bert"),
     body_mode: bool = Form(False),
     bert_profile: str = Form("balanced"),
+    bge_strategy: str = Form(BGE_STRATEGY_COARSE),
     coarse_config: str = Form("")
 ):
     """
@@ -396,7 +521,12 @@ async def submit_task(
     safe_profile = (bert_profile or "balanced").strip().lower()
     if safe_profile not in {"strict", "balanced", "recall"}:
         safe_profile = "balanced"
-    safe_coarse_config = _parse_coarse_config_payload(coarse_config)
+    safe_bge_strategy = _resolve_bge_strategy(bge_strategy)
+    safe_coarse_config = (
+        _parse_coarse_config_payload(coarse_config)
+        if safe_bge_strategy == BGE_STRATEGY_COARSE
+        else None
+    )
 
     task_queue.put({
         'id': task_id,
@@ -405,6 +535,7 @@ async def submit_task(
         'mode': mode,
         'body_mode': body_mode,
         'bert_profile': safe_profile,
+        'bge_strategy': safe_bge_strategy,
         'coarse_config': safe_coarse_config,
         'session_dir': session_dir
     })
@@ -423,6 +554,73 @@ async def coarse_config_defaults():
         "status": "success",
         "defaults": CoarseRetrievalConfig().normalized().to_dict(),
     }
+
+
+@app.post("/api/bge_window_estimate")
+async def bge_window_estimate(
+    target_file: UploadFile = File(...),
+    reference_files: List[UploadFile] = File(...),
+    body_mode: bool = Form(False),
+):
+    if bert_engine is None or traditional_system is None:
+        raise HTTPException(status_code=503, detail="BGE 模型仍在加载，请稍后再估算窗口规模")
+
+    estimate_id = uuid.uuid4().hex[:10]
+    estimate_dir = os.path.join(TEMP_DIR, f"estimate_{estimate_id}")
+    os.makedirs(estimate_dir, exist_ok=True)
+
+    try:
+        target_path = os.path.join(estimate_dir, f"target_{target_file.filename}")
+        with open(target_path, "wb") as f:
+            shutil.copyfileobj(target_file.file, f)
+
+        ref_paths = []
+        for ref in reference_files:
+            ref_path = os.path.join(estimate_dir, f"ref_{ref.filename}")
+            with open(ref_path, "wb") as f:
+                shutil.copyfileobj(ref.file, f)
+            ref_paths.append(ref_path)
+
+        target_text = traditional_system.read_document(target_path)
+        if body_mode:
+            target_text = traditional_system.clean_academic_noise(target_text)
+        target_window_count = _estimate_text_window_count(target_text)
+
+        reference_summaries = []
+        total_reference_windows = 0
+        for ref_path in ref_paths:
+            ref_text = traditional_system.read_document(ref_path)
+            if body_mode:
+                ref_text = traditional_system.clean_academic_noise(ref_text)
+            window_count = _estimate_text_window_count(ref_text)
+            total_reference_windows += window_count
+            reference_summaries.append(
+                {
+                    "file": os.path.basename(ref_path).replace("ref_", ""),
+                    "window_count": int(window_count),
+                }
+            )
+
+        full_pair_count = int(target_window_count * total_reference_windows)
+        recommendation = _window_recommendation(full_pair_count, len(ref_paths))
+        scale_level = _window_scale_level(full_pair_count)
+
+        return {
+            "status": "success",
+            "target_window_count": int(target_window_count),
+            "reference_window_count": int(total_reference_windows),
+            "reference_count": int(len(ref_paths)),
+            "average_reference_windows": float(
+                total_reference_windows / len(ref_paths)
+                if ref_paths else 0.0
+            ),
+            "full_pair_count": full_pair_count,
+            "scale_level": scale_level,
+            "recommendation": recommendation,
+            "references": reference_summaries[:20],
+        }
+    finally:
+        shutil.rmtree(estimate_dir, ignore_errors=True)
 
 
 @app.get("/api/task_status/{task_id}")

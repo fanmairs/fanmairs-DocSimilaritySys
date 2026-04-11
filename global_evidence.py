@@ -134,6 +134,7 @@ class GlobalEvidenceAggregator:
         bert_profile: str = "balanced",
         reference_count: Optional[int] = None,
         candidate_count: Optional[int] = None,
+        retrieval_strategy: str = "coarse_then_fine",
     ) -> Dict[str, object]:
         target_len = self._target_length(target_text)
         source_entries = []
@@ -231,6 +232,7 @@ class GlobalEvidenceAggregator:
 
         return {
             "retrieval_stage": "global_summary",
+            "retrieval_strategy": retrieval_strategy,
             "bert_profile": bert_profile,
             "global_score": float(global_score),
             "global_score_level": score_level,

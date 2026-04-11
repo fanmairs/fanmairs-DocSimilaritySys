@@ -25,6 +25,10 @@ const props = defineProps({
     type: String,
     default: "balanced"
   },
+  bgeStrategy: {
+    type: String,
+    default: "coarse_then_fine"
+  },
   bodyMode: {
     type: Boolean,
     default: true
@@ -48,15 +52,29 @@ const props = defineProps({
   notice: {
     type: String,
     default: ""
+  },
+  windowEstimate: {
+    type: Object,
+    default: null
+  },
+  windowEstimateLoading: {
+    type: Boolean,
+    default: false
+  },
+  windowEstimateError: {
+    type: String,
+    default: ""
   }
 });
 
 const emit = defineEmits([
   "update:mode",
   "update:bertProfile",
+  "update:bgeStrategy",
   "update:bodyMode",
   "update:coarseConfig",
   "reset-coarse-config",
+  "estimate-bge-cost",
   "target-selected",
   "refs-selected",
   "clear-target",
@@ -114,6 +132,21 @@ const profileOptions = [
   }
 ];
 
+const bgeStrategyOptions = [
+  {
+    value: "coarse_then_fine",
+    label: "快速模式",
+    eyebrow: "粗筛后细检",
+    description: "先用粗筛保留可疑参考文档，再对候选做窗口级细检，适合参考库较大时降低等待时间。"
+  },
+  {
+    value: "full_fine",
+    label: "完整模式",
+    eyebrow: "全部细检",
+    description: "跳过粗筛，所有参考文档都进入窗口级细检，适合文档规模可控且更看重完整性的任务。"
+  }
+];
+
 const modeModel = computed({
   get: () => props.mode,
   set: (value) => emit("update:mode", value)
@@ -122,6 +155,11 @@ const modeModel = computed({
 const bertProfileModel = computed({
   get: () => props.bertProfile,
   set: (value) => emit("update:bertProfile", value)
+});
+
+const bgeStrategyModel = computed({
+  get: () => props.bgeStrategy,
+  set: (value) => emit("update:bgeStrategy", value)
 });
 
 const bodyModeModel = computed({
@@ -140,6 +178,53 @@ const activeCoarsePresetLabel = computed(
 const activeCoarsePresetGuide = computed(
   () => activeCoarsePreset.value || customCoarseConfigGuide
 );
+
+const activeStrategy = computed(
+  () =>
+    bgeStrategyOptions.find((option) => option.value === bgeStrategyModel.value) ||
+    bgeStrategyOptions[0]
+);
+
+const formatInteger = (value) => Number(value || 0).toLocaleString("zh-CN");
+
+const windowEstimateMetrics = computed(() => {
+  if (!props.windowEstimate) {
+    return [];
+  }
+
+  return [
+    {
+      label: "目标窗口",
+      value: formatInteger(props.windowEstimate.target_window_count)
+    },
+    {
+      label: "参考窗口",
+      value: formatInteger(props.windowEstimate.reference_window_count)
+    },
+    {
+      label: "全量矩阵",
+      value: formatInteger(props.windowEstimate.full_pair_count)
+    },
+    {
+      label: "参考文档",
+      value: `${formatInteger(props.windowEstimate.reference_count)} 份`
+    }
+  ];
+});
+
+const windowScaleLabel = computed(() => {
+  const level = props.windowEstimate?.scale_level;
+  if (level === "large") {
+    return "窗口规模较高";
+  }
+  if (level === "medium") {
+    return "窗口规模中等";
+  }
+  if (level === "small") {
+    return "窗口规模较小";
+  }
+  return "等待估算";
+});
 
 const updateCoarseConfigField = (field, event) => {
   const rawValue = event.target.value;
@@ -162,6 +247,10 @@ const applyCoarsePreset = (preset) => {
 
 const resetCoarseConfig = () => {
   emit("reset-coarse-config");
+};
+
+const requestWindowEstimate = () => {
+  emit("estimate-bge-cost");
 };
 
 const sessionState = computed(() => {
@@ -357,6 +446,80 @@ const submit = () => {
 
       <div v-if="modeModel === 'bert'" class="setting-group">
         <div class="setting-head">
+          <p class="muted-label">Verification Scope</p>
+          <h3 class="setting-title">检测策略</h3>
+        </div>
+
+        <div class="strategy-layout">
+          <div class="choice-grid">
+            <button
+              v-for="option in bgeStrategyOptions"
+              :key="option.value"
+              class="choice-chip choice-chip--strategy"
+              :class="{ 'choice-chip--active': bgeStrategyModel === option.value }"
+              type="button"
+              @click="bgeStrategyModel = option.value"
+            >
+              <span class="choice-chip__eyebrow">{{ option.eyebrow }}</span>
+              <strong>{{ option.label }}</strong>
+              <span>{{ option.description }}</span>
+            </button>
+          </div>
+
+          <article class="window-estimate-panel">
+            <div class="window-estimate-panel__head">
+              <div>
+                <p class="muted-label">Window Estimate</p>
+                <h4>{{ windowScaleLabel }}</h4>
+              </div>
+              <button
+                class="btn-ghost"
+                type="button"
+                :disabled="windowEstimateLoading || !targetFile || !refFiles.length"
+                @click="requestWindowEstimate"
+              >
+                {{ windowEstimateLoading ? "估算中" : "刷新估算" }}
+              </button>
+            </div>
+
+            <div v-if="windowEstimate" class="window-metric-grid">
+              <article
+                v-for="metric in windowEstimateMetrics"
+                :key="metric.label"
+                class="window-metric"
+              >
+                <span>{{ metric.label }}</span>
+                <strong>{{ metric.value }}</strong>
+              </article>
+            </div>
+
+            <p v-if="windowEstimate" class="window-estimate-message">
+              {{ windowEstimate.recommendation?.message }}
+            </p>
+            <p v-else-if="windowEstimateLoading" class="window-estimate-message">
+              正在根据当前目标文档和参考文档估算窗口规模。
+            </p>
+            <p v-else-if="windowEstimateError" class="window-estimate-message window-estimate-message--warn">
+              {{ windowEstimateError }}
+            </p>
+            <p v-else class="window-estimate-message">
+              上传目标文档和参考文档后，这里会提示目标窗口、参考窗口和全量细检矩阵规模。
+            </p>
+
+            <div v-if="windowEstimate" class="window-recommendation">
+              <span>系统建议</span>
+              <strong>{{ windowEstimate.recommendation?.label }}</strong>
+            </div>
+
+            <p class="window-strategy-note">
+              当前选择：{{ activeStrategy.eyebrow }}。如果快速模式最终候选覆盖全部参考文档，实际会与完整模式等价。
+            </p>
+          </article>
+        </div>
+      </div>
+
+      <div v-if="modeModel === 'bert' && bgeStrategyModel === 'coarse_then_fine'" class="setting-group">
+        <div class="setting-head">
           <p class="muted-label">Coarse Retrieval</p>
           <h3 class="setting-title">粗筛策略与参数</h3>
         </div>
@@ -501,7 +664,7 @@ const submit = () => {
       </button>
 
       <p class="submit-note">
-        BGE 模式适合语义改写检测，传统模式适合快速初筛。你也可以先初筛，再用语义引擎复核高风险文档。
+        BGE 模式会按你选择的检测策略执行：快速模式先粗筛候选，完整模式则让所有参考文档进入细粒度匹配。
       </p>
     </section>
 

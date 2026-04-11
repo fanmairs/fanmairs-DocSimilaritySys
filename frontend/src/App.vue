@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { api } from "./api/client";
 import {
   cloneCoarseConfig,
@@ -15,6 +15,7 @@ const targetFile = ref(null);
 const refFiles = ref([]);
 const mode = ref("bert");
 const bertProfile = ref("balanced");
+const bgeStrategy = ref("coarse_then_fine");
 const bodyMode = ref(true);
 const defaultCoarseConfig = ref(cloneCoarseConfig(coarseConfigDefaults));
 const coarseConfig = ref(cloneCoarseConfig(coarseConfigDefaults));
@@ -24,6 +25,9 @@ const notice = ref("");
 const results = ref(null);
 const resultSummary = ref(null);
 const costTime = ref(0);
+const windowEstimate = ref(null);
+const windowEstimateLoading = ref(false);
+const windowEstimateError = ref("");
 
 const previewVisible = ref(false);
 const previewTitle = ref("");
@@ -31,11 +35,20 @@ const previewContent = ref("");
 const previewLoading = ref(false);
 
 let pollTimer = null;
+let estimateTimer = null;
+let estimateRequestSeq = 0;
 
 const stopPolling = () => {
   if (pollTimer) {
     clearInterval(pollTimer);
     pollTimer = null;
+  }
+};
+
+const stopEstimateTimer = () => {
+  if (estimateTimer) {
+    clearTimeout(estimateTimer);
+    estimateTimer = null;
   }
 };
 
@@ -64,6 +77,85 @@ const clearTarget = () => {
 
 const removeRef = (index) => {
   refFiles.value.splice(index, 1);
+};
+
+const fileSignature = (file) =>
+  file ? `${file.name}:${file.size}:${file.lastModified}` : "";
+
+const refFilesSignature = () => refFiles.value.map(fileSignature).join("|");
+
+const canEstimateWindows = () =>
+  mode.value === "bert" &&
+  Boolean(targetFile.value) &&
+  refFiles.value.length > 0 &&
+  !loading.value;
+
+const estimateBgeWindowCost = async () => {
+  stopEstimateTimer();
+
+  if (!canEstimateWindows()) {
+    windowEstimate.value = null;
+    windowEstimateError.value = "";
+    windowEstimateLoading.value = false;
+    return;
+  }
+
+  const requestSeq = ++estimateRequestSeq;
+  windowEstimateLoading.value = true;
+  windowEstimateError.value = "";
+
+  const formData = new FormData();
+  formData.append("target_file", targetFile.value);
+  refFiles.value.forEach((file) => formData.append("reference_files", file));
+  formData.append("body_mode", bodyMode.value);
+
+  try {
+    const { data } = await api.post("/api/bge_window_estimate", formData, {
+      headers: {
+        "Content-Type": "multipart/form-data"
+      }
+    });
+
+    if (requestSeq !== estimateRequestSeq) {
+      return;
+    }
+
+    if (data.status !== "success") {
+      throw new Error(data.message || "窗口规模估算失败");
+    }
+
+    windowEstimate.value = data;
+  } catch (error) {
+    if (requestSeq !== estimateRequestSeq) {
+      return;
+    }
+    windowEstimate.value = null;
+    windowEstimateError.value =
+      error.response?.data?.detail ||
+      error.message ||
+      "窗口规模估算失败，请稍后重试。";
+  } finally {
+    if (requestSeq === estimateRequestSeq) {
+      windowEstimateLoading.value = false;
+    }
+  }
+};
+
+const scheduleWindowEstimate = () => {
+  stopEstimateTimer();
+  estimateRequestSeq += 1;
+  windowEstimate.value = null;
+  windowEstimateError.value = "";
+
+  if (!canEstimateWindows()) {
+    windowEstimateLoading.value = false;
+    return;
+  }
+
+  windowEstimateLoading.value = true;
+  estimateTimer = setTimeout(() => {
+    estimateBgeWindowCost();
+  }, 700);
 };
 
 const resetCoarseConfig = () => {
@@ -195,10 +287,13 @@ const submitCheck = async () => {
   formData.append("bert_profile", bertProfile.value);
   formData.append("body_mode", bodyMode.value);
   if (mode.value === "bert") {
-    formData.append(
-      "coarse_config",
-      JSON.stringify(sanitizeCoarseConfig(coarseConfig.value))
-    );
+    formData.append("bge_strategy", bgeStrategy.value);
+    if (bgeStrategy.value === "coarse_then_fine") {
+      formData.append(
+        "coarse_config",
+        JSON.stringify(sanitizeCoarseConfig(coarseConfig.value))
+      );
+    }
   }
 
   try {
@@ -228,8 +323,19 @@ onMounted(() => {
   hydrateCoarseConfigDefaults();
 });
 
+watch(
+  () => [
+    mode.value,
+    bodyMode.value,
+    fileSignature(targetFile.value),
+    refFilesSignature()
+  ],
+  scheduleWindowEstimate
+);
+
 onBeforeUnmount(() => {
   stopPolling();
+  stopEstimateTimer();
 });
 </script>
 
@@ -267,15 +373,20 @@ onBeforeUnmount(() => {
           class="workspace-control"
           v-model:mode="mode"
           v-model:bertProfile="bertProfile"
+          v-model:bgeStrategy="bgeStrategy"
           v-model:bodyMode="bodyMode"
           v-model:coarseConfig="coarseConfig"
           :default-coarse-config="defaultCoarseConfig"
+          :window-estimate="windowEstimate"
+          :window-estimate-loading="windowEstimateLoading"
+          :window-estimate-error="windowEstimateError"
           :target-file="targetFile"
           :ref-files="refFiles"
           :loading="loading"
           :poll-status-message="pollStatusMessage"
           :notice="notice"
           @reset-coarse-config="resetCoarseConfig"
+          @estimate-bge-cost="estimateBgeWindowCost"
           @target-selected="onTargetSelected"
           @refs-selected="onRefsSelected"
           @clear-target="clearTarget"

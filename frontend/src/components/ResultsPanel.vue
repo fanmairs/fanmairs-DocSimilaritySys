@@ -73,6 +73,9 @@ const narrativeSignal = computed(() => {
 
 const summaryText = computed(() => {
   if (activeSummary.value) {
+    if (isCoarseStrategyExhausted.value) {
+      return "本次选择了快速模式，但粗筛候选已经覆盖全部参考文档，因此实际执行效果与完整模式一致；全局总分基于所有参考文档的细检证据计算。";
+    }
     if (
       (activeSummary.value.global_source_diversity ?? 0) > 0.45 &&
       (activeSummary.value.global_verified_source_count ?? 0) >= 2 &&
@@ -108,9 +111,39 @@ const summaryText = computed(() => {
 
 const formatScore = (value) => `${((value || 0) * 100).toFixed(2)}%`;
 
+const isCoarseStrategyExhausted = computed(() => {
+  if (!activeSummary.value || activeSummary.value.retrieval_strategy !== "coarse_then_fine") {
+    return false;
+  }
+
+  const candidateCount = Number(activeSummary.value.global_candidate_count || 0);
+  const referenceCount = Number(activeSummary.value.global_reference_count || 0);
+  return referenceCount > 0 && candidateCount >= referenceCount;
+});
+
+const formatRetrievalStrategy = (summary) => {
+  const candidateCount = Number(summary?.global_candidate_count || 0);
+  const referenceCount = Number(summary?.global_reference_count || 0);
+  const scope = referenceCount > 0 ? `${candidateCount}/${referenceCount}` : "";
+
+  if (summary?.retrieval_strategy === "full_fine") {
+    return scope ? `全部细检 ${scope}` : "全部细检";
+  }
+
+  if (isCoarseStrategyExhausted.value) {
+    return scope ? `候选细检 ${scope}，等同全部` : "候选细检，等同全部";
+  }
+
+  return scope ? `候选细检 ${scope}` : "候选细检";
+};
+
 const heroMetrics = computed(() => {
   if (activeSummary.value) {
     return [
+      {
+        label: "检测范围",
+        value: formatRetrievalStrategy(activeSummary.value)
+      },
       {
         label: "全局总分",
         value: formatScore(activeSummary.value.global_score ?? 0)

@@ -54,9 +54,11 @@ class GlobalEvidenceAggregatorTests(unittest.TestCase):
             bert_profile="balanced",
             reference_count=8,
             candidate_count=3,
+            retrieval_strategy="full_fine",
         )
 
         self.assertEqual(summary["retrieval_stage"], "global_summary")
+        self.assertEqual(summary["retrieval_strategy"], "full_fine")
         self.assertEqual(summary["global_reference_count"], 8)
         self.assertEqual(summary["global_candidate_count"], 3)
         self.assertEqual(summary["global_verified_source_count"], 2)
