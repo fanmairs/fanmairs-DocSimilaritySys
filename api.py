@@ -1,16 +1,24 @@
 import os
 import shutil
 import uuid
-import sqlite3
-import json
 import threading
 import queue
 import time
-from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from typing import Dict, List, Optional
+from typing import List
+from api_bge_helpers import (
+    BGE_STRATEGY_COARSE,
+    build_basic_bert_result,
+    estimate_text_window_count,
+    parse_coarse_config_payload,
+    resolve_bge_strategy,
+    run_bert_fine_verification,
+    window_recommendation,
+    window_scale_level,
+)
+from frontend_static import serve_frontend_path
+from task_store import create_task, get_task, init_db, update_task
 from coarse_retrieval import CoarseRetriever, CoarseRetrievalConfig
 from global_evidence import GlobalEvidenceAggregator
 
@@ -29,9 +37,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-BASE_DIR = Path(__file__).resolve().parent
-FRONTEND_DIST_DIR = BASE_DIR / "frontend" / "dist"
-FRONTEND_INDEX_FILE = FRONTEND_DIST_DIR / "index.html"
 TEMP_DIR = "temp_uploads"
 os.makedirs(TEMP_DIR, exist_ok=True)
 
@@ -39,67 +44,9 @@ os.makedirs(TEMP_DIR, exist_ok=True)
 # 1. 数据库初始化 (模拟企业级 MySQL)
 # ==========================================
 # 用于持久化存储任务的进度和结果
-DB_FILE = "tasks.db"
-def init_db():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS tasks
-                 (id TEXT PRIMARY KEY, 
-                  status TEXT, 
-                  result TEXT, 
-                  message TEXT,
-                  cost_time REAL DEFAULT 0,
-                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-    
-    # 尝试为旧版表补充缺失字段（兼容老数据库）
-    try:
-        c.execute("ALTER TABLE tasks ADD COLUMN cost_time REAL DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        c.execute("ALTER TABLE tasks ADD COLUMN created_at TIMESTAMP DEFAULT '1970-01-01 00:00:00'")
-    except sqlite3.OperationalError:
-        pass
-        
-    # 鲁棒性增强1：系统重启时，自动将上一次崩溃留下的“僵尸任务”标记为失败
-    c.execute("UPDATE tasks SET status='failed', message='服务器重启，排队或计算中的任务已中断' WHERE status IN ('pending', 'processing')")
-    
-    # 鲁棒性增强2：自动清理 3 天前的陈旧任务，防止单机 SQLite 膨胀
-    c.execute("DELETE FROM tasks WHERE created_at <= datetime('now', '-3 days')")
-    
-    conn.commit()
-    conn.close()
 
 init_db()
 
-def update_task(task_id, status, result=None, message=None, cost_time=0):
-    # 鲁棒性增强3：引入带退避的重试机制，防止 SQLite 在高并发读写时报错 "database is locked"
-    for _ in range(5):
-        try:
-            conn = sqlite3.connect(DB_FILE, timeout=5.0)
-            c = conn.cursor()
-            c.execute("UPDATE tasks SET status=?, result=?, message=?, cost_time=? WHERE id=?", 
-                      (status, result, message, cost_time, task_id))
-            conn.commit()
-            conn.close()
-            break
-        except sqlite3.OperationalError:
-            time.sleep(0.2)
-
-def get_task(task_id):
-    conn = sqlite3.connect(DB_FILE, timeout=5.0)
-    c = conn.cursor()
-    c.execute("SELECT status, result, message, cost_time FROM tasks WHERE id=?", (task_id,))
-    row = c.fetchone()
-    conn.close()
-    if row:
-        return {
-            "status": row[0], 
-            "result": json.loads(row[1]) if row[1] else None, 
-            "message": row[2],
-            "cost_time": row[3]
-        }
-    return None
 
 # ==========================================
 # 2. 全局任务队列与后台消费者 (模拟企业级 Celery + Redis)
@@ -113,143 +60,6 @@ traditional_system = None
 coarse_retriever = None
 global_evidence_aggregator = None
 
-BGE_STRATEGY_COARSE = "coarse_then_fine"
-BGE_STRATEGY_FULL = "full_fine"
-BGE_STRATEGIES = {BGE_STRATEGY_COARSE, BGE_STRATEGY_FULL}
-
-
-def _resolve_bge_strategy(value: Optional[str]) -> str:
-    normalized = (value or BGE_STRATEGY_COARSE).strip().lower()
-    return normalized if normalized in BGE_STRATEGIES else BGE_STRATEGY_COARSE
-
-
-def _parse_coarse_config_payload(payload: Optional[str]) -> Optional[Dict[str, object]]:
-    if payload is None:
-        return None
-
-    normalized = payload.strip()
-    if not normalized:
-        return None
-
-    try:
-        raw_config = json.loads(normalized)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=400, detail="coarse_config 必须是合法 JSON") from exc
-
-    if not isinstance(raw_config, dict):
-        raise HTTPException(status_code=400, detail="coarse_config 必须是 JSON 对象")
-
-    try:
-        validated = CoarseRetrievalConfig.from_partial_dict(raw_config)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    return validated.to_dict()
-
-
-def _run_bert_fine_verification(ref_path: str, target_text: str, ref_text: str, bert_profile: str):
-    plagiarized_parts = bert_engine.sliding_window_check(
-        target_text,
-        ref_text,
-        threshold_profile=bert_profile
-    )
-    score_breakdown = bert_engine.score_document_pair(
-        target_text,
-        ref_text,
-        plagiarized_parts=plagiarized_parts,
-        threshold_profile=bert_profile
-    )
-    print(
-        ">>> [BGE][Score] "
-        f"file={os.path.basename(ref_path)} "
-        "stage=fine "
-        f"final={score_breakdown['final_score']:.4f} "
-        f"risk={score_breakdown.get('risk_score', score_breakdown['final_score']):.4f} "
-        f"doc={score_breakdown['doc_semantic']:.4f} "
-        f"doc_ex={score_breakdown.get('doc_semantic_excess', score_breakdown['doc_semantic']):.4f} "
-        f"cov={score_breakdown['coverage']:.4f} "
-        f"cov_eff={score_breakdown.get('coverage_effective', score_breakdown['coverage']):.4f} "
-        f"cov_w={score_breakdown.get('coverage_weighted', score_breakdown['coverage']):.4f} "
-        f"conf={score_breakdown['confidence']:.4f} "
-        f"base={score_breakdown['base_score']:.4f} "
-        f"gate={score_breakdown['gate']:.4f} "
-        f"hits={score_breakdown['hit_count']}"
-    )
-    return plagiarized_parts, score_breakdown
-
-
-def _build_basic_bert_result(ref_path: str, bert_profile: str, score_breakdown: Dict[str, float], plagiarized_parts: List[Dict[str, object]]) -> Dict[str, object]:
-    return {
-        "file": os.path.basename(ref_path).replace("ref_", ""),
-        # Backward-compatible field: now mapped to the composite BGE similarity score.
-        "sim_bert": float(score_breakdown["final_score"]),
-        "sim_bert_risk": float(score_breakdown.get("risk_score", score_breakdown["final_score"])),
-        "sim_bert_doc": float(score_breakdown["doc_semantic"]),
-        "sim_bert_doc_excess": float(score_breakdown.get("doc_semantic_excess", score_breakdown["doc_semantic"])),
-        "sim_bert_coverage": float(score_breakdown["coverage"]),
-        "sim_bert_coverage_raw": float(score_breakdown.get("coverage_raw", score_breakdown["coverage"])),
-        "sim_bert_coverage_weighted": float(score_breakdown.get("coverage_weighted", score_breakdown["coverage"])),
-        "sim_bert_coverage_effective": float(score_breakdown.get("coverage_effective", score_breakdown["coverage"])),
-        "sim_bert_confidence": float(score_breakdown["confidence"]),
-        "sim_bert_base": float(score_breakdown["base_score"]),
-        "sim_bert_gate": float(score_breakdown["gate"]),
-        "sim_bert_hits": int(score_breakdown["hit_count"]),
-        "sim_bert_semantic_signal": float(score_breakdown.get("semantic_signal", 0.0)),
-        "sim_bert_evidence": float(score_breakdown.get("evidence_score", 0.0)),
-        "sim_bert_continuity_bonus": float(score_breakdown.get("continuity_bonus", 0.0)),
-        "sim_bert_continuity_longest": float(score_breakdown.get("continuity_longest", 0.0)),
-        "sim_bert_continuity_top3": float(score_breakdown.get("continuity_top3", 0.0)),
-        "sim_bert_low_evidence_cap": float(score_breakdown.get("low_evidence_cap", 1.0)),
-        # Explicit macro coverage field for downstream display/debug.
-        "sim_bert_legacy_coverage": float(score_breakdown.get("coverage_raw", score_breakdown["coverage"])),
-        "sim_bert_verified": True,
-        "sim_bert_candidate": True,
-        "bert_profile": bert_profile,
-        "retrieval_stage": "fine_verified",
-        "plagiarized_parts": plagiarized_parts,
-    }
-
-
-def _estimate_text_window_count(text: str) -> int:
-    normalized = DeepSemanticEngine._normalize_text(text)
-    if not normalized:
-        return 0
-    return len(bert_engine._build_windows(normalized))
-
-
-def _window_scale_level(pair_count: int) -> str:
-    if pair_count >= 50000:
-        return "large"
-    if pair_count >= 12000:
-        return "medium"
-    return "small"
-
-
-def _window_recommendation(pair_count: int, reference_count: int) -> Dict[str, str]:
-    scale_level = _window_scale_level(pair_count)
-    if scale_level == "small" and reference_count <= 12:
-        return {
-            "strategy": BGE_STRATEGY_FULL,
-            "label": "建议完整细检",
-            "message": "当前窗口规模较小，完整细检的等待成本可控，更适合追求结果完整性。",
-        }
-    if scale_level == "medium":
-        return {
-            "strategy": BGE_STRATEGY_COARSE,
-            "label": "建议粗筛后细检",
-            "message": "当前窗口规模已经明显上升，粗筛后细检可以降低等待时间。",
-        }
-    if scale_level == "large":
-        return {
-            "strategy": BGE_STRATEGY_COARSE,
-            "label": "强烈建议粗筛后细检",
-            "message": "当前全量细检矩阵较大，完整模式可能等待较久，建议先粗筛候选。",
-        }
-    return {
-        "strategy": BGE_STRATEGY_COARSE,
-        "label": "建议粗筛后细检",
-        "message": "参考文档数量较多，建议用粗筛保留可疑来源，再进入细粒度复核。",
-    }
 
 def gpu_worker():
     """
@@ -261,7 +71,7 @@ def gpu_worker():
     print(">>> [GPU 队列守护进程] 正在启动并独占加载深度学习模型...")
     bert_engine = DeepSemanticEngine()
     traditional_system = PlagiarismDetectorSystem(
-        stopwords_path='dicts/stopwords.txt', 
+        stopwords_path='dicts/stopwords.txt',
         lsa_components=3,
         synonyms_path='dicts/synonyms.txt',
         semantic_embeddings_path='dicts/embeddings/fasttext_zh.vec',
@@ -271,7 +81,7 @@ def gpu_worker():
     coarse_retriever = CoarseRetriever(bert_engine, traditional_system.preprocessor)
     global_evidence_aggregator = GlobalEvidenceAggregator(bert_engine)
     print(">>> [GPU 队列守护进程] 模型加载完毕，开始监听并发查重任务...")
-    
+
     while True:
         # 如果队列为空，线程会在这里阻塞休眠，不消耗 CPU
         task = task_queue.get()
@@ -284,13 +94,13 @@ def gpu_worker():
         bge_strategy = task.get('bge_strategy', BGE_STRATEGY_COARSE)
         coarse_config = task.get('coarse_config')
         session_dir = task['session_dir']
-        
+
         print(f">>> [GPU Worker] 正在处理排队任务: {task_id}")
         update_task(task_id, "processing")
-        
+
         # 记录开始时间，用于计算耗时
         start_time = time.time()
-        
+
         try:
             results = []
             result_summary = None
@@ -356,13 +166,14 @@ def gpu_worker():
 
                     for ref_path in candidate_ref_paths:
                         ref_text = reference_text_map[ref_path]
-                        plagiarized_parts, score_breakdown = _run_bert_fine_verification(
+                        plagiarized_parts, score_breakdown = run_bert_fine_verification(
+                            bert_engine,
                             ref_path,
                             target_text,
                             ref_text,
                             bert_profile,
                         )
-                        verified_result = _build_basic_bert_result(
+                        verified_result = build_basic_bert_result(
                             ref_path,
                             bert_profile,
                             score_breakdown,
@@ -390,13 +201,14 @@ def gpu_worker():
 
                     for index, ref_path in enumerate(candidate_ref_paths, start=1):
                         ref_text = reference_text_map[ref_path]
-                        plagiarized_parts, score_breakdown = _run_bert_fine_verification(
+                        plagiarized_parts, score_breakdown = run_bert_fine_verification(
+                            bert_engine,
                             ref_path,
                             target_text,
                             ref_text,
                             bert_profile,
                         )
-                        verified_result = _build_basic_bert_result(
+                        verified_result = build_basic_bert_result(
                             ref_path,
                             bert_profile,
                             score_breakdown,
@@ -437,7 +249,7 @@ def gpu_worker():
 
                 results.extend(coarse_only_results)
                 results.sort(key=lambda x: x['sim_bert'], reverse=True)
-                
+
             else:
                 # 传统字面引擎检测逻辑
                 raw_results = traditional_system.check_similarity(target_path, ref_paths, body_mode=body_mode)
@@ -451,23 +263,23 @@ def gpu_worker():
                                 "risk_score": float(r.get('risk_score', r.get('sim_hybrid', r['sim_lsa']))),
                                 "plagiarized_parts": r.get('plagiarized_parts', [])
                             })
-            
+
             # 计算耗时并写入数据库
             cost_time = time.time() - start_time
             result_payload = {
                 "items": results,
                 "summary": result_summary,
             }
-            update_task(task_id, "completed", result=json.dumps(result_payload), cost_time=cost_time)
+            update_task(task_id, "completed", result=result_payload, cost_time=cost_time)
             print(f">>> [GPU Worker] 任务圆满完成: {task_id} (耗时: {cost_time:.2f}秒)")
-            
+
         except Exception as e:
             import traceback
             traceback.print_exc()
             cost_time = time.time() - start_time
             update_task(task_id, "failed", message=str(e), cost_time=cost_time)
             print(f">>> [GPU Worker] 任务计算崩溃: {task_id} (耗时: {cost_time:.2f}秒)")
-            
+
         finally:
             # 清理当前任务产生的临时文件
             shutil.rmtree(session_dir, ignore_errors=True)
@@ -499,31 +311,27 @@ async def submit_task(
     task_id = str(uuid.uuid4())
     session_dir = os.path.join(TEMP_DIR, task_id)
     os.makedirs(session_dir, exist_ok=True)
-    
+
     # 1. 极速保存文件
     target_path = os.path.join(session_dir, f"target_{target_file.filename}")
     with open(target_path, "wb") as f: shutil.copyfileobj(target_file.file, f)
-        
+
     ref_paths = []
     for ref in reference_files:
         ref_path = os.path.join(session_dir, f"ref_{ref.filename}")
         with open(ref_path, "wb") as f: shutil.copyfileobj(ref.file, f)
         ref_paths.append(ref_path)
-        
-    # 2. 写入数据库初始状态
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("INSERT INTO tasks (id, status) VALUES (?, ?)", (task_id, "pending"))
-    conn.commit()
-    conn.close()
-    
+
+    # 2. Register the queued task
+    create_task(task_id)
+
     # 3. 塞入后台处理队列
     safe_profile = (bert_profile or "balanced").strip().lower()
     if safe_profile not in {"strict", "balanced", "recall"}:
         safe_profile = "balanced"
-    safe_bge_strategy = _resolve_bge_strategy(bge_strategy)
+    safe_bge_strategy = resolve_bge_strategy(bge_strategy)
     safe_coarse_config = (
-        _parse_coarse_config_payload(coarse_config)
+        parse_coarse_config_payload(coarse_config)
         if safe_bge_strategy == BGE_STRATEGY_COARSE
         else None
     )
@@ -539,11 +347,11 @@ async def submit_task(
         'coarse_config': safe_coarse_config,
         'session_dir': session_dir
     })
-    
+
     queue_length = task_queue.qsize()
     return {
-        "status": "success", 
-        "task_id": task_id, 
+        "status": "success",
+        "task_id": task_id,
         "queue_length": queue_length,
         "message": f"任务已提交！前面还有 {queue_length - 1} 个人在排队..." if queue_length > 1 else "任务已提交！即将开始计算..."
     }
@@ -584,7 +392,7 @@ async def bge_window_estimate(
         target_text = traditional_system.read_document(target_path)
         if body_mode:
             target_text = traditional_system.clean_academic_noise(target_text)
-        target_window_count = _estimate_text_window_count(target_text)
+        target_window_count = estimate_text_window_count(bert_engine, target_text)
 
         reference_summaries = []
         total_reference_windows = 0
@@ -592,7 +400,7 @@ async def bge_window_estimate(
             ref_text = traditional_system.read_document(ref_path)
             if body_mode:
                 ref_text = traditional_system.clean_academic_noise(ref_text)
-            window_count = _estimate_text_window_count(ref_text)
+            window_count = estimate_text_window_count(bert_engine, ref_text)
             total_reference_windows += window_count
             reference_summaries.append(
                 {
@@ -602,8 +410,8 @@ async def bge_window_estimate(
             )
 
         full_pair_count = int(target_window_count * total_reference_windows)
-        recommendation = _window_recommendation(full_pair_count, len(ref_paths))
-        scale_level = _window_scale_level(full_pair_count)
+        recommendation = window_recommendation(full_pair_count, len(ref_paths))
+        scale_level = window_scale_level(full_pair_count)
 
         return {
             "status": "success",
@@ -632,10 +440,10 @@ async def check_task_status(task_id: str):
     task_info = get_task(task_id)
     if not task_info:
         return {"status": "error", "message": "任务不存在或已过期"}
-        
+
     return {
-        "status": "success", 
-        "task_status": task_info["status"], 
+        "status": "success",
+        "task_status": task_info["status"],
         "data": task_info["result"],
         "message": task_info["message"],
         "cost_time": task_info["cost_time"]
@@ -651,10 +459,10 @@ async def preview_document(file: UploadFile = File(...)):
     try:
         with open(temp_path, "wb") as f:
             shutil.copyfileobj(file.file, f)
-        
+
         # 实例化一个临时的传统引擎专门用来读取各种格式 (TXT/DOCX/PDF)
         temp_system = PlagiarismDetectorSystem(
-            stopwords_path='dicts/stopwords.txt', 
+            stopwords_path='dicts/stopwords.txt',
             lsa_components=3,
             synonyms_path='dicts/synonyms.txt',
             semantic_embeddings_path='dicts/embeddings/fasttext_zh.vec',
@@ -670,39 +478,14 @@ async def preview_document(file: UploadFile = File(...)):
             os.remove(temp_path)
 
 
-def _serve_frontend_path(request_path: str = ""):
-    if not FRONTEND_INDEX_FILE.exists():
-        raise HTTPException(
-            status_code=503,
-            detail="Frontend build not found. Run `npm run build` in the frontend directory first."
-        )
-
-    if request_path.startswith("api/"):
-        raise HTTPException(status_code=404, detail="API route not found")
-
-    if not request_path:
-        return FileResponse(FRONTEND_INDEX_FILE)
-
-    candidate = (FRONTEND_DIST_DIR / request_path).resolve()
-    try:
-        candidate.relative_to(FRONTEND_DIST_DIR.resolve())
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail="Invalid frontend asset path") from exc
-
-    if candidate.is_file():
-        return FileResponse(candidate)
-
-    return FileResponse(FRONTEND_INDEX_FILE)
-
-
 @app.get("/", include_in_schema=False)
 async def serve_frontend_index():
-    return _serve_frontend_path()
+    return serve_frontend_path()
 
 
 @app.get("/{full_path:path}", include_in_schema=False)
 async def serve_frontend_app(full_path: str):
-    return _serve_frontend_path(full_path)
+    return serve_frontend_path(full_path)
 
 if __name__ == "__main__":
     import uvicorn

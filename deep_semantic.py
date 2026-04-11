@@ -1,8 +1,38 @@
-import math
 import re
 
 import numpy as np
 from typing import Dict, List, Optional, Tuple
+from deep_semantic_evidence import (
+    calculate_continuity_features,
+    calculate_coverage,
+    calculate_effective_coverage,
+    calculate_match_confidence,
+    calculate_raw_coverage,
+    calculate_realistic_score,
+    collect_target_intervals,
+)
+from deep_semantic_profiles import DEFAULT_PROFILE, THRESHOLD_PROFILES, resolve_profile
+from deep_semantic_text import (
+    clamp01,
+    extract_entities,
+    extract_tags,
+    get_paragraphs,
+    get_skeleton,
+    is_formula_explanation,
+    make_span,
+    merge_intervals,
+    normalize_for_paragraphs,
+    normalize_text,
+    safe_iou,
+    sigmoid,
+    split_sentences_with_offsets,
+    sum_intervals,
+)
+from deep_semantic_window_scoring import (
+    resolve_outlier_metrics,
+    score_window_candidate,
+    select_topk_indices,
+)
 
 
 class DeepSemanticEngine:
@@ -50,181 +80,27 @@ class DeepSemanticEngine:
         # strict   -> final adjudication, minimize false positives
         # balanced -> daily default
         # recall   -> clue mining, minimize misses
-        self.default_profile = "balanced"
-        self.threshold_profiles = {
-            "strict": {
-                "short_text_max_chars": 200,
-                "outlier_std_k": 2.3,
-                "outlier_percentile": 0.98,
-                "outlier_percentile_margin": 0.012,
-                "outlier_percentile_min_windows": 12,
-                "short_low": 0.66,
-                "short_high": 0.74,
-                "long_low": 0.86,
-                "long_high": 0.91,
-                "paragraph_threshold": 0.97,
-                "min_window_chars": 12,
-                "score_weights": {
-                    "doc_semantic": 0.20,
-                    "coverage": 0.30,
-                    "confidence": 0.50,
-                },
-                "final_score": {
-                    "semantic_weight": 0.24,
-                    "evidence_weight": 0.76,
-                    "semantic_center": 0.84,
-                    "semantic_scale": 0.07,
-                    "coverage_gain": 9.0,
-                    "low_evidence_cap_base": 0.10,
-                    "low_evidence_cap_gain": 0.16,
-                    "continuity_boost": 0.05,
-                },
-                "semantic_floor": 0.80,
-                "score_gate": {
-                    "base": 0.08,
-                    "coverage": 0.55,
-                    "confidence": 0.30,
-                    "evidence": 0.25,
-                    "low_cov_th": 0.05,
-                    "mid_cov_th": 0.08,
-                    "mid_conf_th": 0.35,
-                    "mid_cov_cap": 0.28,
-                    "topic_cov_th": 0.12,
-                    "topic_conf_th": 0.75,
-                    "topic_cap": 0.20,
-                    "low_evidence_cov_th": 0.10,
-                    "low_evidence_conf_th": 0.60,
-                    "low_evidence_cap": 0.08,
-                },
-            },
-            "balanced": {
-                "short_text_max_chars": 200,
-                "outlier_std_k": 2.0,
-                "outlier_percentile": 0.95,
-                "outlier_percentile_margin": 0.010,
-                "outlier_percentile_min_windows": 10,
-                "short_low": 0.60,
-                "short_high": 0.70,
-                "long_low": 0.82,
-                "long_high": 0.88,
-                "paragraph_threshold": 0.95,
-                "min_window_chars": 10,
-                "score_weights": {
-                    "doc_semantic": 0.18,
-                    "coverage": 0.52,
-                    "confidence": 0.30,
-                },
-                "final_score": {
-                    "semantic_weight": 0.30,
-                    "evidence_weight": 0.70,
-                    "semantic_center": 0.80,
-                    "semantic_scale": 0.08,
-                    "coverage_gain": 8.0,
-                    "low_evidence_cap_base": 0.14,
-                    "low_evidence_cap_gain": 0.20,
-                    "continuity_boost": 0.06,
-                },
-                "semantic_floor": 0.86,
-                "score_gate": {
-                    "base": 0.09,
-                    "coverage": 0.60,
-                    "confidence": 0.22,
-                    "evidence": 0.22,
-                    "low_cov_th": 0.05,
-                    "low_cov_cap": 0.20,
-                    "mid_cov_th": 0.08,
-                    "mid_conf_th": 0.35,
-                    "mid_cov_cap": 0.30,
-                    "topic_cov_th": 0.15,
-                    "topic_conf_th": 0.75,
-                    "topic_cap": 0.24,
-                    "low_evidence_cov_th": 0.10,
-                    "low_evidence_conf_th": 0.55,
-                    "low_evidence_cap": 0.14,
-                },
-            },
-            "recall": {
-                "short_text_max_chars": 200,
-                "outlier_std_k": 1.7,
-                "outlier_percentile": 0.93,
-                "outlier_percentile_margin": 0.008,
-                "outlier_percentile_min_windows": 8,
-                "short_low": 0.55,
-                "short_high": 0.65,
-                "long_low": 0.78,
-                "long_high": 0.84,
-                "paragraph_threshold": 0.92,
-                "min_window_chars": 8,
-                "score_weights": {
-                    "doc_semantic": 0.35,
-                    "coverage": 0.40,
-                    "confidence": 0.25,
-                },
-                "final_score": {
-                    "semantic_weight": 0.36,
-                    "evidence_weight": 0.64,
-                    "semantic_center": 0.76,
-                    "semantic_scale": 0.09,
-                    "coverage_gain": 7.0,
-                    "low_evidence_cap_base": 0.18,
-                    "low_evidence_cap_gain": 0.22,
-                    "continuity_boost": 0.07,
-                },
-                "semantic_floor": 0.74,
-                "score_gate": {
-                    "base": 0.15,
-                    "coverage": 0.50,
-                    "confidence": 0.25,
-                    "evidence": 0.20,
-                    "low_cov_th": 0.04,
-                    "low_cov_cap": 0.22,
-                    "mid_cov_th": 0.07,
-                    "mid_conf_th": 0.30,
-                    "mid_cov_cap": 0.30,
-                    "topic_cov_th": 0.10,
-                    "topic_conf_th": 0.70,
-                    "topic_cap": 0.26,
-                },
-            },
-        }
+        self.default_profile = DEFAULT_PROFILE
+        self.threshold_profiles = THRESHOLD_PROFILES
 
     @staticmethod
     def _clamp01(value: float) -> float:
-        return float(max(0.0, min(1.0, value)))
+        return clamp01(value)
 
     @staticmethod
     def _sigmoid(value: float) -> float:
-        if value >= 0:
-            exp_term = math.exp(-value)
-            return float(1.0 / (1.0 + exp_term))
-
-        exp_term = math.exp(value)
-        return float(exp_term / (1.0 + exp_term))
+        return sigmoid(value)
 
     @staticmethod
     def _normalize_text(text: str) -> str:
-        import re
-
-        return re.sub(r'\s+', ' ', text or '').strip()
+        return normalize_text(text)
 
     @staticmethod
     def _normalize_for_paragraphs(text: str) -> str:
-        import re
-
-        normalized = (text or '').replace('\r\n', '\n').replace('\r', '\n')
-        normalized = re.sub(r'[ \t\f\v]+', ' ', normalized)
-        normalized = re.sub(r'\n{3,}', '\n\n', normalized)
-        return normalized.strip()
+        return normalize_for_paragraphs(text)
 
     def _resolve_profile(self, profile_name: Optional[str]) -> Tuple[str, Dict]:
-        if not isinstance(profile_name, str) or not profile_name.strip():
-            return self.default_profile, self.threshold_profiles[self.default_profile]
-
-        normalized = profile_name.strip().lower()
-        if normalized not in self.threshold_profiles:
-            print(f">>> [BGE][Warn] Unknown threshold profile: {profile_name}. Fallback to {self.default_profile}.")
-            normalized = self.default_profile
-        return normalized, self.threshold_profiles[normalized]
+        return resolve_profile(profile_name, self.default_profile, self.threshold_profiles)
 
     def _resolve_tokenizer(self):
         tokenizer = getattr(self.model, "tokenizer", None)
@@ -238,22 +114,7 @@ class DeepSemanticEngine:
 
     @staticmethod
     def _make_span(text: str, start: int, end: Optional[int] = None) -> Optional[Dict]:
-        raw = text or ""
-        if end is None:
-            end = start + len(raw)
-
-        left_trim = len(raw) - len(raw.lstrip())
-        right_trim = len(raw) - len(raw.rstrip())
-        span_start = start + left_trim
-        span_end = end - right_trim
-        if span_end <= span_start:
-            return None
-
-        cleaned = raw.strip()
-        if not cleaned:
-            return None
-
-        return {"text": cleaned, "start": span_start, "end": span_end}
+        return make_span(text, start, end)
 
     def _estimate_token_count(self, text: str) -> int:
         normalized = (text or "").strip()
@@ -694,21 +555,7 @@ class DeepSemanticEngine:
         return [{"text": stripped, "start": start, "end": start + len(stripped)}]
 
     def _split_sentences_with_offsets(self, text: str) -> List[Dict[str, int]]:
-        if not text:
-            return []
-
-        pattern = re.compile(r'[^\u3002\uff01\uff1f\uff1b!?;\n]+[\u3002\uff01\uff1f\uff1b!?;\n]*')
-        sentences = []
-        for match in pattern.finditer(text):
-            span = self._make_span(match.group(0), match.start(), match.end())
-            if span is not None:
-                sentences.append(span)
-
-        if sentences:
-            return sentences
-
-        fallback = self._make_span(text, 0, len(text))
-        return [fallback] if fallback else []
+        return split_sentences_with_offsets(text)
 
     def _build_windows(self, text: str) -> List[Dict]:
         windows = self._build_text_windows(
@@ -734,63 +581,10 @@ class DeepSemanticEngine:
 
     @staticmethod
     def _select_topk_indices(scores: np.ndarray, topk: int) -> np.ndarray:
-        if scores.size == 0 or topk <= 0:
-            return np.asarray([], dtype=int)
-
-        k = min(int(topk), int(scores.size))
-        if k == scores.size:
-            return np.argsort(scores)[::-1]
-
-        candidate_idx = np.argpartition(scores, -k)[-k:]
-        return candidate_idx[np.argsort(scores[candidate_idx])[::-1]]
+        return select_topk_indices(scores, topk)
 
     def _resolve_outlier_metrics(self, sims: np.ndarray, peak_sim: float, profile_cfg: Dict) -> Dict[str, float]:
-        if sims.size == 0:
-            return {
-                "mean": 0.0,
-                "std": 0.0,
-                "std_threshold": 0.0,
-                "percentile_threshold": 0.0,
-                "effective_threshold": 0.0,
-                "is_statistical_outlier": False,
-                "is_percentile_outlier": False,
-                "used_percentile": False,
-            }
-
-        mean_sim = float(np.mean(sims))
-        std_sim = float(np.std(sims))
-        outlier_std_k = float(profile_cfg.get("outlier_std_k", 2.0))
-        std_threshold = mean_sim + outlier_std_k * std_sim
-
-        percentile_cfg = float(profile_cfg.get("outlier_percentile", 0.0))
-        if percentile_cfg > 1.0:
-            percentile_cfg /= 100.0
-        percentile_cfg = min(max(percentile_cfg, 0.0), 0.999)
-        percentile_margin = float(profile_cfg.get("outlier_percentile_margin", 0.0))
-        percentile_min_windows = max(1, int(profile_cfg.get("outlier_percentile_min_windows", 1)))
-
-        percentile_threshold = 0.0
-        used_percentile = percentile_cfg > 0.0 and sims.size >= percentile_min_windows
-        is_percentile_outlier = False
-        if used_percentile:
-            percentile_threshold = float(np.quantile(sims, percentile_cfg)) + percentile_margin
-            is_percentile_outlier = peak_sim >= percentile_threshold
-
-        is_statistical_outlier = peak_sim > std_threshold
-        effective_threshold = std_threshold
-        if used_percentile:
-            effective_threshold = min(std_threshold, percentile_threshold)
-
-        return {
-            "mean": mean_sim,
-            "std": std_sim,
-            "std_threshold": float(std_threshold),
-            "percentile_threshold": float(percentile_threshold),
-            "effective_threshold": float(effective_threshold),
-            "is_statistical_outlier": bool(is_statistical_outlier),
-            "is_percentile_outlier": bool(is_percentile_outlier),
-            "used_percentile": bool(used_percentile),
-        }
+        return resolve_outlier_metrics(self, sims, peak_sim, profile_cfg)
 
     def _score_window_candidate(
         self,
@@ -800,310 +594,51 @@ class DeepSemanticEngine:
         outlier_threshold: float,
         profile_cfg: Dict,
     ) -> Optional[Dict]:
-        import difflib
-
-        text1 = item1["text"]
-        text2 = item2["text"]
-
-        min_window_chars = profile_cfg["min_window_chars"]
-        if len(text1) <= min_window_chars or len(text2) <= min_window_chars:
-            return None
-
-        digit_ratio1 = sum(c.isdigit() for c in text1) / max(1, len(text1))
-        digit_ratio2 = sum(c.isdigit() for c in text2) / max(1, len(text2))
-        eng_ratio1 = len(re.findall(r'[a-zA-Z]', text1)) / max(1, len(text1))
-
-        edit_similarity = difflib.SequenceMatcher(None, text1, text2).ratio()
-
-        entities1 = self._extract_entities(text1)
-        entities2 = self._extract_entities(text2)
-        entity_iou = self._safe_iou(entities1, entities2)
-
-        tags1 = self._extract_tags(text1)
-        tags2 = self._extract_tags(text2)
-        tag_iou = self._safe_iou(tags1, tags2)
-
-        skeleton1 = self._get_skeleton(text1)
-        skeleton2 = self._get_skeleton(text2)
-        skeleton_sim = difflib.SequenceMatcher(None, skeleton1, skeleton2).ratio()
-
-        rule_penalty = 1.0
-        rule_flags = []
-
-        if entity_iou < 0.1 and tag_iou < 0.25 and skeleton_sim > 0.8:
-            rule_penalty *= 0.55
-            rule_flags.append("template_skeleton")
-
-        if self._is_formula_explanation(text1) and self._is_formula_explanation(text2):
-            if entity_iou > 0.3 and edit_similarity < 0.8:
-                rule_penalty *= 0.70
-                rule_flags.append("formula_explanation")
-
-        if entity_iou < 0.08:
-            rule_penalty *= 0.88
-            rule_flags.append("entity_mismatch")
-        elif entity_iou < 0.16:
-            rule_penalty *= 0.93
-
-        if tag_iou < 0.10:
-            rule_penalty *= 0.92
-            rule_flags.append("tag_mismatch")
-
-        # Keep technical / formula-heavy spans as downgraded evidence instead of hard rejecting them.
-        # This matches the Step5 goal: prefer penalty over silent discard on boundary samples.
-        if text1.count('.') >= 5:
-            rule_penalty *= 0.92
-            rule_flags.append("target_many_periods")
-        if text2.count('.') >= 5:
-            rule_penalty *= 0.92
-            rule_flags.append("ref_many_periods")
-        if digit_ratio1 >= 0.2:
-            rule_penalty *= 0.84
-            rule_flags.append("target_digit_heavy")
-        if digit_ratio2 >= 0.2:
-            rule_penalty *= 0.84
-            rule_flags.append("ref_digit_heavy")
-        if eng_ratio1 >= 0.4:
-            rule_penalty *= 0.88
-            rule_flags.append("target_english_heavy")
-
-        eng_ratio2 = len(re.findall(r'[a-zA-Z]', text2)) / max(1, len(text2))
-        if eng_ratio2 >= 0.4:
-            rule_penalty *= 0.88
-            rule_flags.append("ref_english_heavy")
-
-        margin = raw_sim - outlier_threshold
-        margin_norm = self._clamp01((margin + 0.05) / 0.20)
-
-        confidence = raw_sim * (0.65 + 0.35 * margin_norm)
-        confidence *= (0.90 + 0.10 * entity_iou)
-        confidence *= (0.90 + 0.10 * tag_iou)
-        confidence *= rule_penalty
-        if edit_similarity < 0.12:
-            confidence *= 0.90
-
-        effective_score = self._clamp01(raw_sim * (0.55 + 0.45 * rule_penalty))
-        return {
-            'target_part': text1,
-            'ref_part': text2,
-            'score': float(effective_score),
-            'raw_score': float(raw_sim),
-            'confidence': float(self._clamp01(confidence)),
-            'length': len(text1),
-            'target_start': int(item1['start']),
-            'target_end': int(item1['end']),
-            'ref_start': int(item2['start']),
-            'ref_end': int(item2['end']),
-            'match_type': 'window',
-            'rule_penalty': float(self._clamp01(rule_penalty)),
-            'rule_flags': rule_flags,
-        }
+        return score_window_candidate(self, item1, item2, raw_sim, outlier_threshold, profile_cfg)
 
     @staticmethod
     def _extract_entities(text: str):
-        import re
-
-        return set(re.findall(r'[A-Za-z]+|\d+(?:\.\d+)?', text))
+        return extract_entities(text)
 
     @staticmethod
     def _extract_tags(text: str):
-        import jieba.analyse
-
-        return set(jieba.analyse.extract_tags(text, topK=5))
+        return extract_tags(text)
 
     @staticmethod
     def _get_skeleton(text: str) -> str:
-        import jieba.posseg as pseg
-
-        words = pseg.cut(text)
-        skeleton = [w.word for w in words if w.flag in ['v', 'p', 'c', 'd']]
-        return "".join(skeleton)
+        return get_skeleton(text)
 
     @staticmethod
     def _is_formula_explanation(text: str) -> bool:
-        import re
-
-        explanation_keywords = ['公式', '其中', '表示', '定义', '计算', '如图', '如式', '等于', '获得', '所示']
-        keyword_count = sum(1 for kw in explanation_keywords if kw in text)
-        has_math_symbols = len(re.findall(r'[A-Za-z]+|\d+', text)) > 5
-        return keyword_count >= 2 and has_math_symbols
+        return is_formula_explanation(text)
 
     @staticmethod
     def _safe_iou(set_a: set, set_b: set, default: float = 1.0) -> float:
-        if not set_a and not set_b:
-            return default
-        union = len(set_a.union(set_b))
-        if union == 0:
-            return default
-        return len(set_a.intersection(set_b)) / union
+        return safe_iou(set_a, set_b, default)
 
     @staticmethod
     def _get_paragraphs(text: str, min_chars: int = 50, max_count: int = 24) -> List[str]:
-        normalized = DeepSemanticEngine._normalize_for_paragraphs(text)
-        if not normalized:
-            return []
-
-        paras = [p.strip() for p in normalized.split('\n\n') if len(p.strip()) >= min_chars]
-        if paras:
-            return paras[:max_count]
-
-        # Fallback: when paragraph separators are missing, use long sentence windows.
-        flattened = DeepSemanticEngine._normalize_text(text)
-        if not flattened:
-            return []
-
-        fallback = []
-        pattern = r'[^。！？；]+[。！？；]?'
-        import re
-
-        chunks = [s.strip() for s in re.findall(pattern, flattened) if s.strip()]
-        current = []
-        current_len = 0
-        for sent in chunks:
-            current.append(sent)
-            current_len += len(sent)
-            if current_len >= min_chars:
-                fallback.append(''.join(current))
-                current = []
-                current_len = 0
-            if len(fallback) >= max_count:
-                break
-
-        if current and len(''.join(current)) >= min_chars and len(fallback) < max_count:
-            fallback.append(''.join(current))
-        return fallback
+        return get_paragraphs(text, min_chars, max_count)
 
     @staticmethod
     def _merge_intervals(intervals: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
-        if not intervals:
-            return []
-
-        sorted_intervals = sorted(intervals, key=lambda x: x[0])
-        merged = [sorted_intervals[0]]
-        for start, end in sorted_intervals[1:]:
-            last_start, last_end = merged[-1]
-            if start <= last_end:
-                merged[-1] = (last_start, max(last_end, end))
-            else:
-                merged.append((start, end))
-        return merged
+        return merge_intervals(intervals)
 
     @staticmethod
     def _sum_intervals(intervals: List[Tuple[int, int]]) -> int:
-        if not intervals:
-            return 0
-        return int(sum(max(0, end - start) for start, end in intervals))
+        return sum_intervals(intervals)
 
     def _collect_target_intervals(self, plagiarized_parts: List[Dict], target_len: int) -> List[Tuple[int, int]]:
-        if target_len <= 0 or not plagiarized_parts:
-            return []
-
-        intervals = []
-        for part in plagiarized_parts:
-            start = part.get('target_start')
-            end = part.get('target_end')
-            if isinstance(start, int) and isinstance(end, int) and end > start:
-                s = max(0, start)
-                e = min(target_len, end)
-                if e > s:
-                    intervals.append((s, e))
-        return intervals
+        return collect_target_intervals(self, plagiarized_parts, target_len)
 
     def _calculate_raw_coverage(self, plagiarized_parts: List[Dict], target_len: int) -> float:
-        intervals = self._collect_target_intervals(plagiarized_parts, target_len)
-        if not intervals:
-            return 0.0
-
-        merged = self._merge_intervals(intervals)
-        return self._clamp01(self._sum_intervals(merged) / max(1, target_len))
+        return calculate_raw_coverage(self, plagiarized_parts, target_len)
 
     def _calculate_coverage(self, plagiarized_parts: List[Dict], target_len: int) -> float:
-        if target_len <= 0 or not plagiarized_parts:
-            return 0.0
-
-        # Step5: coverage is confidence-weighted interval union,
-        # so downgraded matches contribute less instead of hard removal.
-        events = []
-        for part in plagiarized_parts:
-            start = part.get('target_start')
-            end = part.get('target_end')
-            if isinstance(start, int) and isinstance(end, int) and end > start:
-                s = max(0, start)
-                e = min(target_len, end)
-                if e <= s:
-                    continue
-                conf = self._clamp01(float(part.get('confidence', part.get('score', 0.0))))
-                # Keep very-low confidence hits lower impact, but avoid over-suppressing balanced mode.
-                conf = conf ** 1.10
-                events.append((s, 1, round(conf, 6)))
-                events.append((e, -1, round(conf, 6)))
-
-        if not events:
-            return 0.0
-
-        import heapq
-        from collections import defaultdict
-
-        events.sort(key=lambda x: x[0])
-        active_counts = defaultdict(int)
-        max_heap = []
-
-        weighted_covered = 0.0
-        idx = 0
-        n = len(events)
-
-        while idx < n:
-            pos = events[idx][0]
-            while idx < n and events[idx][0] == pos:
-                _, typ, conf = events[idx]
-                if typ == 1:
-                    active_counts[conf] += 1
-                    heapq.heappush(max_heap, -conf)
-                else:
-                    active_counts[conf] -= 1
-                idx += 1
-
-            while max_heap and active_counts[-max_heap[0]] <= 0:
-                heapq.heappop(max_heap)
-
-            if idx >= n:
-                break
-            next_pos = events[idx][0]
-            if next_pos <= pos:
-                continue
-
-            if max_heap:
-                top_conf = -max_heap[0]
-                weighted_covered += (next_pos - pos) * top_conf
-
-        return self._clamp01(weighted_covered / max(1, target_len))
+        return calculate_coverage(self, plagiarized_parts, target_len)
 
     def _calculate_match_confidence(self, plagiarized_parts: List[Dict]) -> float:
-        if not plagiarized_parts:
-            return 0.0
-
-        weighted_sum = 0.0
-        total_weight = 0.0
-        conf_samples = []
-        for part in plagiarized_parts:
-            confidence = self._clamp01(float(part.get('confidence', part.get('score', 0.0))))
-            weight = float(max(1, int(part.get('length', 1))))
-            weighted_sum += confidence * weight
-            total_weight += weight
-            conf_samples.append(confidence)
-
-        if total_weight <= 0:
-            return 0.0
-
-        # Blend weighted mean with top-k confidence to avoid "many weak hits dilute all evidence".
-        raw_conf = self._clamp01(weighted_sum / total_weight)
-        if conf_samples:
-            topk = min(5, len(conf_samples))
-            top_mean = float(np.mean(np.sort(np.asarray(conf_samples))[-topk:]))
-            raw_conf = self._clamp01(0.70 * raw_conf + 0.30 * top_mean)
-
-        # Keep some nonlinearity for robustness, but lighter than before.
-        return self._clamp01(raw_conf ** 1.35)
+        return calculate_match_confidence(self, plagiarized_parts)
 
     def _calculate_effective_coverage(
         self,
@@ -1111,43 +646,14 @@ class DeepSemanticEngine:
         weighted_coverage: float,
         confidence: float,
     ) -> float:
-        raw_coverage = self._clamp01(raw_coverage)
-        weighted_coverage = self._clamp01(weighted_coverage)
-        confidence = self._clamp01(confidence)
-
-        coverage_gap = max(0.0, raw_coverage - weighted_coverage)
-        recovery = coverage_gap * (0.20 + 0.35 * confidence)
-        return self._clamp01(weighted_coverage + recovery)
+        return calculate_effective_coverage(self, raw_coverage, weighted_coverage, confidence)
 
     def _calculate_continuity_features(
         self,
         plagiarized_parts: List[Dict],
         target_len: int,
     ) -> Dict[str, float]:
-        intervals = self._collect_target_intervals(plagiarized_parts, target_len)
-        if not intervals:
-            return {
-                "longest_run_ratio": 0.0,
-                "top3_run_ratio": 0.0,
-                "merged_hit_count": 0,
-            }
-
-        merged = self._merge_intervals(intervals)
-        lengths = sorted((max(0, end - start) for start, end in merged), reverse=True)
-        if not lengths:
-            return {
-                "longest_run_ratio": 0.0,
-                "top3_run_ratio": 0.0,
-                "merged_hit_count": 0,
-            }
-
-        longest_run_ratio = self._clamp01(lengths[0] / max(1, target_len))
-        top3_run_ratio = self._clamp01(sum(lengths[:3]) / max(1, target_len))
-        return {
-            "longest_run_ratio": float(longest_run_ratio),
-            "top3_run_ratio": float(top3_run_ratio),
-            "merged_hit_count": int(len(merged)),
-        }
+        return calculate_continuity_features(self, plagiarized_parts, target_len)
 
     def _calculate_realistic_score(
         self,
@@ -1162,58 +668,18 @@ class DeepSemanticEngine:
         longest_run_ratio: float,
         top3_run_ratio: float,
     ) -> Tuple[float, float, float, float, float, float]:
-        effective_coverage = self._calculate_effective_coverage(
+        return calculate_realistic_score(
+            self,
+            profile_name,
+            profile_cfg,
             raw_coverage,
             weighted_coverage,
             confidence,
-        )
-
-        final_cfg = profile_cfg.get("final_score", {})
-        semantic_weight = float(final_cfg.get("semantic_weight", 0.30))
-        evidence_weight = float(final_cfg.get("evidence_weight", 0.70))
-        semantic_center = float(final_cfg.get("semantic_center", 0.80))
-        semantic_scale = max(1e-6, float(final_cfg.get("semantic_scale", 0.08)))
-        coverage_gain = max(1e-6, float(final_cfg.get("coverage_gain", 8.0)))
-        low_evidence_cap_base = float(final_cfg.get("low_evidence_cap_base", 0.14))
-        low_evidence_cap_gain = float(final_cfg.get("low_evidence_cap_gain", 0.20))
-        continuity_boost = float(final_cfg.get("continuity_boost", 0.06))
-
-        semantic_input = self._clamp01(0.60 * doc_semantic + 0.40 * paragraph_semantic)
-        semantic_score = self._sigmoid((semantic_input - semantic_center) / semantic_scale)
-
-        coverage_core = self._clamp01(
-            0.55 * effective_coverage
-            + 0.25 * longest_run_ratio
-            + 0.20 * top3_run_ratio
-        )
-        evidence_score = self._clamp01(1.0 - math.exp(-coverage_gain * coverage_core))
-        confidence_scale = 0.72 + 0.28 * (self._clamp01(confidence) ** 0.85)
-        evidence_score = self._clamp01(evidence_score * confidence_scale)
-
-        continuity_signal = self._clamp01(
-            max(longest_run_ratio * 10.0, top3_run_ratio * 5.0)
-        )
-        continuity_bonus = continuity_boost * continuity_signal * self._clamp01(confidence)
-
-        final_score = (
-            semantic_weight * semantic_score
-            + evidence_weight * evidence_score
-            + continuity_bonus
-        )
-
-        if effective_coverage < 0.03 and longest_run_ratio < 0.01:
-            low_evidence_cap = low_evidence_cap_base + low_evidence_cap_gain * semantic_score
-            final_score = min(final_score, low_evidence_cap)
-        else:
-            low_evidence_cap = 1.0
-
-        return (
-            self._clamp01(final_score),
-            float(effective_coverage),
-            float(semantic_score),
-            float(evidence_score),
-            float(continuity_bonus),
-            float(low_evidence_cap),
+            doc_semantic,
+            paragraph_semantic,
+            hit_count,
+            longest_run_ratio,
+            top3_run_ratio,
         )
 
     def _get_target_semantic_context(self, target_text: str):
