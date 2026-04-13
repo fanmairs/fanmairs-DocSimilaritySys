@@ -3,6 +3,7 @@ import re
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
 
+from grobid_client import read_pdf_body_with_grobid
 from text_noise_filter import filter_detection_text_blocks, is_numeric_table_noise
 
 
@@ -246,6 +247,10 @@ def _read_pdf_with_docling(filepath: str) -> str:
     return "\n\n".join(lines).strip()
 
 
+def _read_pdf_with_grobid(filepath: str) -> str:
+    return read_pdf_body_with_grobid(filepath)
+
+
 def read_pdf_for_detection(filepath: str, backend: Optional[str] = None) -> str:
     """Read PDF body text for similarity detection with layout-aware filtering.
 
@@ -253,8 +258,18 @@ def read_pdf_for_detection(filepath: str, backend: Optional[str] = None) -> str:
     - hybrid: PyMuPDF text blocks + pdfplumber table bounding boxes. Default.
     - pymupdf: PyMuPDF only, still with block classification.
     - docling: Docling conversion first, then fallback to hybrid.
+    - grobid: GROBID TEI body extraction first, then fallback to hybrid.
     """
     selected_backend = (backend or os.getenv("DOCSIM_PDF_BACKEND") or "hybrid").strip().lower()
+
+    if selected_backend == "grobid":
+        try:
+            text = _read_pdf_with_grobid(filepath)
+            if text:
+                return text
+        except Exception:
+            pass
+        return _read_pdf_with_hybrid_layout(filepath)
 
     if selected_backend == "docling":
         try:

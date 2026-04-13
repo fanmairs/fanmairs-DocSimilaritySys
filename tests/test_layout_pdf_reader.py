@@ -80,6 +80,27 @@ class LayoutPdfReaderTests(unittest.TestCase):
         self.assertNotIn("12.314", diabetes_text)
         self.assertNotIn("15.764", diabetes_text)
 
+    def test_grobid_backend_falls_back_to_hybrid_when_service_is_unavailable(self):
+        data_dir = "data"
+        if not os.path.isdir(data_dir):
+            self.skipTest("data directory is not available")
+
+        k_pdf = next(
+            (
+                os.path.join(data_dir, name)
+                for name in os.listdir(data_dir)
+                if name.startswith("K") and name.lower().endswith(".pdf")
+            ),
+            None,
+        )
+        if not k_pdf:
+            self.skipTest("sample PDF is not available")
+
+        text = read_pdf_for_detection(k_pdf, backend="grobid")
+
+        self.assertGreater(len(text), 1000)
+        self.assertNotIn("2.282", text)
+
 
 if __name__ == "__main__":
     unittest.main()

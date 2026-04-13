@@ -88,6 +88,36 @@ DocSimilaritySys/
 py -m uvicorn api:app --host 127.0.0.1 --port 8000
 ```
 
+### PDF 解析后端
+
+默认 PDF 检测使用 `hybrid` 后端：PyMuPDF 读取文本块，pdfplumber 识别表格区域，再由项目规则过滤表格、图表数字、页眉页脚、公式和图注。
+
+```powershell
+$env:DOCSIM_PDF_BACKEND="hybrid"
+py -m uvicorn api:app --host 127.0.0.1 --port 8000
+```
+
+如果要使用 Docling：
+
+```powershell
+$env:DOCSIM_PDF_BACKEND="docling"
+py -m uvicorn api:app --host 127.0.0.1 --port 8000
+```
+
+如果要使用 GROBID 学术结构解析，需要先启动 GROBID 服务。GROBID 后端会优先抽取 TEI XML 中的正文 `body`，跳过表格、图、公式和参考文献；服务不可用时会自动回退到 `hybrid`。
+
+```powershell
+docker run --rm --init -p 8070:8070 lfoppiano/grobid:0.8.2
+```
+
+另开一个终端启动后端：
+
+```powershell
+$env:DOCSIM_PDF_BACKEND="grobid"
+$env:GROBID_URL="http://127.0.0.1:8070"
+py -m uvicorn api:app --host 127.0.0.1 --port 8000
+```
+
 也可以直接运行：
 
 ```bash
