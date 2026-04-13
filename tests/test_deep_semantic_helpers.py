@@ -60,6 +60,28 @@ class DeepSemanticHelperTests(unittest.TestCase):
         self.assertIn("target_many_periods", scored["rule_flags"])
         self.assertIn("ref_many_periods", scored["rule_flags"])
 
+    def test_numeric_table_spans_are_rejected_as_evidence(self):
+        item1 = {
+            "text": "3.12 0.162 0.071 0.148 2.282 0.025* 3.88 0.428 0.152 0.386 2.816",
+            "start": 0,
+            "end": 84,
+        }
+        item2 = {
+            "text": "12.314 12.758 12.815 13.981 14.020 2.138 2.228 4.471 4.472 8.323",
+            "start": 10,
+            "end": 88,
+        }
+
+        scored = self.engine._score_window_candidate(
+            item1,
+            item2,
+            raw_sim=0.92,
+            outlier_threshold=0.86,
+            profile_cfg={"min_window_chars": 5},
+        )
+
+        self.assertIsNone(scored)
+
     def test_realistic_score_no_longer_crushes_high_semantic_sparse_matches(self):
         final_score, effective_coverage, semantic_signal, evidence_score, continuity_bonus, low_evidence_cap = self.engine._calculate_realistic_score(
             profile_name="strict",

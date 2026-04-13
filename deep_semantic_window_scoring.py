@@ -2,6 +2,7 @@ import re
 from typing import Dict, Optional
 
 import numpy as np
+from text_noise_filter import is_numeric_table_noise
 
 
 def select_topk_indices(scores: np.ndarray, topk: int) -> np.ndarray:
@@ -80,6 +81,8 @@ def score_window_candidate(
 
     min_window_chars = profile_cfg["min_window_chars"]
     if len(text1) <= min_window_chars or len(text2) <= min_window_chars:
+        return None
+    if is_numeric_table_noise(text1) or is_numeric_table_noise(text2):
         return None
 
     digit_ratio1 = sum(c.isdigit() for c in text1) / max(1, len(text1))

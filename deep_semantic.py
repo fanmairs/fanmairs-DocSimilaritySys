@@ -33,6 +33,7 @@ from deep_semantic_window_scoring import (
     score_window_candidate,
     select_topk_indices,
 )
+from text_noise_filter import is_numeric_table_noise
 
 
 class DeepSemanticEngine:
@@ -570,8 +571,12 @@ class DeepSemanticEngine:
 
         filtered = []
         for window in windows:
+            if is_numeric_table_noise(window["text"]):
+                continue
             chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', window["text"]))
             if len(window["text"]) <= 5:
+                continue
+            if chinese_chars / max(len(window["text"]), 1) <= 0.08:
                 continue
             if chinese_chars > 0 and chinese_chars / max(len(window["text"]), 1) <= 0.2:
                 continue

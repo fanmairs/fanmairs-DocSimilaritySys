@@ -1,4 +1,5 @@
 import os
+from layout_pdf_reader import read_pdf_for_detection
 
 
 def clean_academic_noise(text):
@@ -109,16 +110,15 @@ def read_document(filepath, preview_mode=False):
                 import fitz  # PyMuPDF
             except ImportError:
                 raise ImportError("请先安装 PyMuPDF 库: pip install PyMuPDF")
-            text = ""
-            with fitz.open(filepath) as doc:
-                for page in doc:
-                    # 核心修复：使用 get_text("blocks") 解决双栏/多栏排版的乱序问题
-                    # 它会将页面划分为多个物理文本块，并按正确的阅读顺序（先左栏后右栏）返回
-                    blocks = page.get_text("blocks")
-                    # 过滤掉图片块等非文本内容 (block的类型标识在最后一个元素，0表示文本)
-                    text_blocks = [b[4] for b in blocks if b[-1] == 0]
-                    for tb in text_blocks:
-                        text += tb + "\n"
+            if preview_mode:
+                text_blocks = []
+                with fitz.open(filepath) as doc:
+                    for page in doc:
+                        blocks = page.get_text("blocks")
+                        text_blocks.extend([b[4] for b in blocks if b[-1] == 0])
+                text = "\n".join(text_blocks)
+            else:
+                text = read_pdf_for_detection(filepath)
 
             if not preview_mode:
                 # 【核心优化】：保留自然段落边界，不要粗暴地把 \n 全部替换成空格

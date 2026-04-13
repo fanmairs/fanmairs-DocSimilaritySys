@@ -13,6 +13,7 @@ __pycache__/
 # Runtime temp files
 temp_uploads/
 temp_pycache/
+tmp/
 tasks.db
 
 # Frontend build artifacts
