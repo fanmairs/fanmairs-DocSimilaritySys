@@ -225,11 +225,38 @@ def _read_pdf_with_hybrid_layout(filepath: str) -> str:
 
 def _read_pdf_with_docling(filepath: str) -> str:
     try:
+        from docling.datamodel.base_models import InputFormat
+        from docling.datamodel.pipeline_options import PdfPipelineOptions
         from docling.document_converter import DocumentConverter
+        from docling.document_converter import PdfFormatOption
     except ImportError as exc:
         raise RuntimeError("docling is not installed") from exc
 
-    converter = DocumentConverter()
+    pipeline_options = PdfPipelineOptions()
+    pipeline_options.do_ocr = os.getenv("DOCSIM_DOCLING_OCR", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    pipeline_options.do_table_structure = os.getenv(
+        "DOCSIM_DOCLING_TABLE_STRUCTURE",
+        "0",
+    ).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    artifacts_path = os.getenv("DOCLING_ARTIFACTS_PATH")
+    if artifacts_path:
+        pipeline_options.artifacts_path = artifacts_path
+
+    converter = DocumentConverter(
+        format_options={
+            InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
+        }
+    )
     result = converter.convert(filepath)
     document = getattr(result, "document", None)
     if document is None:
