@@ -6,7 +6,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from typing import List, Optional
 
-from document_readers.common.noise_filter import filter_detection_text_blocks
+from ..common.noise_filter import filter_detection_text_blocks
 
 
 DEFAULT_GROBID_URL = "http://127.0.0.1:8070"
@@ -138,13 +138,3 @@ def read_pdf_body_with_grobid(
     tei_xml = process_fulltext_document(filepath, grobid_url=grobid_url, timeout=timeout)
     text = extract_body_text_from_tei(tei_xml)
     return re.sub(r'\n{3,}', '\n\n', text).strip()
-
-
-# Compatibility hand-off: keep old imports working while the implementation
-# now lives under document_readers.pdf.
-from document_readers.pdf.grobid_backend import (  # noqa: E402,F401
-    DEFAULT_GROBID_URL,
-    extract_body_text_from_tei,
-    process_fulltext_document,
-    read_pdf_body_with_grobid,
-)

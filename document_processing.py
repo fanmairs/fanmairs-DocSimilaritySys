@@ -1,5 +1,4 @@
-import os
-from layout_pdf_reader import read_pdf_for_detection
+from document_readers.factory import read_document_by_type
 
 
 def clean_academic_noise(text):
@@ -78,6 +77,9 @@ def clean_academic_noise(text):
 
 
 def read_document(filepath, preview_mode=False):
+    """Read a document through the modular document_readers package."""
+    return read_document_by_type(filepath, preview_mode=preview_mode)
+
     """
     统一的文件读取接口：支持 txt, docx, pdf
     preview_mode=True 时，保留文档的原始换行和段落结构，用于前端 UI 预览

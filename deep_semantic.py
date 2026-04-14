@@ -33,7 +33,7 @@ from deep_semantic_window_scoring import (
     score_window_candidate,
     select_topk_indices,
 )
-from text_noise_filter import is_numeric_table_noise
+from document_readers.common.noise_filter import is_numeric_table_noise
 
 
 class DeepSemanticEngine:

@@ -2,7 +2,7 @@ import re
 from typing import Dict, Optional
 
 import numpy as np
-from text_noise_filter import is_numeric_table_noise
+from document_readers.common.noise_filter import is_numeric_table_noise
 
 
 def select_topk_indices(scores: np.ndarray, topk: int) -> np.ndarray:

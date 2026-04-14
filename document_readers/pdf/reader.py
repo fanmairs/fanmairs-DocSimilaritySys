@@ -3,8 +3,8 @@ import re
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from document_readers.common.noise_filter import filter_detection_text_blocks, is_numeric_table_noise
-from document_readers.pdf.grobid_backend import read_pdf_body_with_grobid
+from .grobid_backend import read_pdf_body_with_grobid
+from ..common.noise_filter import filter_detection_text_blocks, is_numeric_table_noise
 
 
 BBox = Tuple[float, float, float, float]
@@ -311,14 +311,3 @@ def read_pdf_for_detection(filepath: str, backend: Optional[str] = None) -> str:
         return _read_pdf_basic_for_detection(filepath)
 
     return _read_pdf_with_hybrid_layout(filepath)
-
-
-# Compatibility hand-off: keep old imports working while the implementation
-# now lives under document_readers.pdf.
-from document_readers.pdf.reader import (  # noqa: E402,F401
-    BBox,
-    LayoutBlock,
-    _bbox_overlap_ratio,
-    classify_layout_blocks,
-    read_pdf_for_detection,
-)
