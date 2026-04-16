@@ -98,11 +98,3 @@ def filter_detection_text_blocks(blocks: Iterable[str]) -> List[str]:
         for block in blocks
         if block and block.strip() and not is_numeric_table_noise(block)
     ]
-
-
-# Compatibility hand-off: the active implementation now lives under
-# text_processing.cleaners.noise.
-from text_processing.cleaners.noise import (  # noqa: E402,F401
-    filter_detection_text_blocks,
-    is_numeric_table_noise,
-)

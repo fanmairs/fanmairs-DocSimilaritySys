@@ -6,7 +6,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from typing import List, Optional
 
-from document_readers.common.noise_filter import filter_detection_text_blocks
+from text_processing.cleaners.noise import filter_detection_text_blocks
 
 
 DEFAULT_GROBID_URL = "http://127.0.0.1:8070"

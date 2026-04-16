@@ -101,8 +101,8 @@ def filter_detection_text_blocks(blocks: Iterable[str]) -> List[str]:
 
 
 # Compatibility hand-off: keep old imports working while the implementation
-# now lives under document_readers.common.
-from document_readers.common.noise_filter import (  # noqa: E402,F401
+# now lives under text_processing.cleaners.
+from text_processing.cleaners.noise import (  # noqa: E402,F401
     filter_detection_text_blocks,
     is_numeric_table_noise,
 )

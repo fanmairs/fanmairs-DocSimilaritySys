@@ -161,3 +161,13 @@ def safe_iou(set_a: set, set_b: set, default: float = 1.0) -> float:
     if union == 0:
         return default
     return len(set_a.intersection(set_b)) / union
+
+
+# Compatibility hand-off: core text normalization and segmentation now live in
+# text_processing, while deep_semantic_text remains the legacy import surface.
+from text_processing.normalizers.basic import normalize_for_paragraphs, normalize_text  # noqa: E402,F401
+from text_processing.segmenters.paragraphs import get_paragraphs  # noqa: E402,F401
+from text_processing.segmenters.sentences import (  # noqa: E402,F401
+    make_span,
+    split_sentences_with_offsets,
+)

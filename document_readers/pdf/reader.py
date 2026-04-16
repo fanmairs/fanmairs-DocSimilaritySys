@@ -3,8 +3,9 @@ import re
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
 
+from text_processing.cleaners.noise import filter_detection_text_blocks, is_numeric_table_noise
+
 from .grobid_backend import read_pdf_body_with_grobid
-from ..common.noise_filter import filter_detection_text_blocks, is_numeric_table_noise
 
 
 BBox = Tuple[float, float, float, float]

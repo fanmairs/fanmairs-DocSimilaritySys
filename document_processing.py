@@ -1,7 +1,10 @@
 from document_readers.factory import read_document_by_type
+from text_processing.cleaners.academic import clean_academic_noise as modular_clean_academic_noise
 
 
 def clean_academic_noise(text):
+    return modular_clean_academic_noise(text)
+
     import re
     cleaned = re.sub(r'\s+', ' ', text).strip()
 

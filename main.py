@@ -2,8 +2,8 @@ import os
 import time
 import argparse
 import glob
-from document_processing import clean_academic_noise as clean_academic_noise_text
 from document_processing import read_document as read_document_file
+from text_processing.cleaners.academic import clean_academic_noise as clean_academic_noise_text
 from traditional_scoring import calculate_risk_score, fuse_similarity_scores
 
 # 导入我们亲手打造的四大核心模块

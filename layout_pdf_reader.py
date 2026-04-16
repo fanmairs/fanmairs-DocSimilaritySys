@@ -3,7 +3,7 @@ import re
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from document_readers.common.noise_filter import filter_detection_text_blocks, is_numeric_table_noise
+from text_processing.cleaners.noise import filter_detection_text_blocks, is_numeric_table_noise
 from document_readers.pdf.grobid_backend import read_pdf_body_with_grobid
 
 
