@@ -5,7 +5,7 @@ DocSimilaritySys 是一个面向中文文档的相似度比对与疑似抄袭检
 - **传统白盒检测**：基于分词、TF-IDF、LSA/SVD、余弦相似度、软语义词向量和滑动窗口，强调可解释、轻量、便于教学展示。
 - **深度语义检测**：基于 BGE/SentenceTransformer 做文档级语义、段落级语义和细粒度窗口匹配，并通过粗筛、证据聚合和评分规则降低误报。
 
-系统提供 FastAPI 后端、前端构建产物托管、命令行传统检测入口，以及旧版 Streamlit 演示界面。
+系统提供 FastAPI 后端、前端构建产物托管，以及命令行传统检测入口。
 
 ## 核心能力
 
@@ -25,7 +25,6 @@ DocSimilaritySys 是一个面向中文文档的相似度比对与疑似抄袭检
 DocSimilaritySys/
 ├── api.py                         # FastAPI 后端入口
 ├── api_bge_helpers.py             # API 层 BGE 参数、复核和窗口估算辅助
-├── app.py                         # 旧版 Streamlit 演示界面
 ├── coarse_retrieval.py            # BGE 粗筛召回模块
 ├── deep_semantic.py               # BGE 深度语义主引擎
 ├── deep_semantic_evidence.py      # BGE 证据覆盖率和最终评分
@@ -57,7 +56,6 @@ DocSimilaritySys/
 | --- | --- |
 | `api.py` | FastAPI 后端主入口。负责 CORS、任务提交接口、任务状态接口、文档预览接口、BGE 窗口规模估算接口、后台 GPU worker 启动和任务队列消费。 |
 | `api_bge_helpers.py` | API 层 BGE 辅助逻辑。负责解析 BGE 策略、解析粗筛配置、执行单篇参考文档的 BGE 细检复核、构造 BERT/BGE 返回结果、估算窗口数量和给出粗筛/全量细检建议。 |
-| `app.py` | 旧版 Streamlit 页面。用于本地演示上传文档、选择传统或 BERT 检测、展示查重报告。现在主要作为演示入口保留。 |
 | `coarse_retrieval.py` | 深度语义粗筛模块。负责粗筛配置、目标文档上下文、参考文档上下文、文档语义分、词面锚点分、段落热点分、候选参考文档选择，以及粗筛/细检结果元数据构造。 |
 | `deep_semantic.py` | 深度语义主引擎。负责加载 BGE 模型、管理 tokenizer、长文本编码、构建语义窗口、执行滑动窗口细检、计算文档对综合评分，并调用拆分出的 helper 模块完成具体规则。 |
 | `deep_semantic_evidence.py` | BGE 证据评分模块。负责目标文本命中区间收集、原始覆盖率、置信度加权覆盖率、匹配置信度、有效覆盖率、连续性特征和最终现实分数计算。 |
@@ -159,14 +157,6 @@ py main.py data/检测文档.txt
 ```bash
 py main.py data/检测文档.txt data/
 ```
-
-## 旧版 Streamlit 演示
-
-```bash
-streamlit run app.py
-```
-
-`app.py` 是旧版演示界面，适合本地快速展示传统模式和 BERT 模式，但当前推荐使用 FastAPI + frontend 的主流程。
 
 ## 检测流程说明
 

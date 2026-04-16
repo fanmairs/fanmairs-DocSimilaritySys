@@ -1,6 +1,6 @@
 import unittest
 
-from coarse_retrieval import (
+from engines.semantic.coarse_retrieval import (
     CoarseRetriever,
     CoarseRetrievalConfig,
     analyze_topic_concentration,

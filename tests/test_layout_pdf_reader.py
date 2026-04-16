@@ -2,7 +2,7 @@ import os
 import re
 import unittest
 
-from layout_pdf_reader import (
+from document_readers.pdf.reader import (
     LayoutBlock,
     _bbox_overlap_ratio,
     classify_layout_blocks,

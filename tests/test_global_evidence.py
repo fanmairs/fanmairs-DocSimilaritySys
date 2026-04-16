@@ -1,7 +1,7 @@
 import unittest
 
-from deep_semantic import DeepSemanticEngine
-from global_evidence import GlobalEvidenceAggregator
+from engines.semantic.bge_backend import DeepSemanticEngine
+from engines.semantic.global_evidence import GlobalEvidenceAggregator
 
 
 class GlobalEvidenceAggregatorTests(unittest.TestCase):

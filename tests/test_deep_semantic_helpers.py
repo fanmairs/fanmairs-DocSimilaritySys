@@ -1,6 +1,6 @@
 import unittest
 
-from deep_semantic import DeepSemanticEngine
+from engines.semantic.bge_backend import DeepSemanticEngine
 
 
 class DeepSemanticHelperTests(unittest.TestCase):

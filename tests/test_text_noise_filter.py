@@ -1,6 +1,6 @@
 import unittest
 
-from text_noise_filter import filter_detection_text_blocks, is_numeric_table_noise
+from text_processing.cleaners.noise import filter_detection_text_blocks, is_numeric_table_noise
 
 
 class TextNoiseFilterTests(unittest.TestCase):

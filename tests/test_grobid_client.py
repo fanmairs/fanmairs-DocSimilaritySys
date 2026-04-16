@@ -1,6 +1,6 @@
 import unittest
 
-from grobid_client import extract_body_text_from_tei
+from document_readers.pdf.grobid_backend import extract_body_text_from_tei
 
 
 class GrobidClientTests(unittest.TestCase):

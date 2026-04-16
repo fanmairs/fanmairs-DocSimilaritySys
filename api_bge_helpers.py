@@ -4,8 +4,8 @@ from typing import Dict, List, Optional
 
 from fastapi import HTTPException
 
-from coarse_retrieval import CoarseRetrievalConfig
-from deep_semantic import DeepSemanticEngine
+from engines.semantic.bge_backend import DeepSemanticEngine
+from engines.semantic.coarse_retrieval import CoarseRetrievalConfig
 
 
 BGE_STRATEGY_COARSE = "coarse_then_fine"

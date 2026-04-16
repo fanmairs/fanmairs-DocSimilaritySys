@@ -19,12 +19,12 @@ from api_bge_helpers import (
 )
 from frontend_static import serve_frontend_path
 from task_store import create_task, get_task, init_db, update_task
-from coarse_retrieval import CoarseRetriever, CoarseRetrievalConfig
-from global_evidence import GlobalEvidenceAggregator
+from engines.semantic.coarse_retrieval import CoarseRetriever, CoarseRetrievalConfig
+from engines.semantic.global_evidence import GlobalEvidenceAggregator
 
 # 导入我们项目核心类
-from main import PlagiarismDetectorSystem
-from deep_semantic import DeepSemanticEngine
+from engines.semantic.bge_backend import DeepSemanticEngine
+from engines.traditional.system import PlagiarismDetectorSystem
 
 app = FastAPI(title="智能文档查重系统 (异步队列并发版)")
 
