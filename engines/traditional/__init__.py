@@ -38,7 +38,7 @@ def __getattr__(name):
 
         return SoftSemanticScorer
     if name in {"calculate_risk_score", "fuse_similarity_scores"}:
-        from . import scoring
+        from scoring import traditional
 
-        return getattr(scoring, name)
+        return getattr(traditional, name)
     raise AttributeError(name)

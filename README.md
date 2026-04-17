@@ -60,7 +60,7 @@ DocSimilaritySys/
 
 ```powershell
 $env:DOCSIM_PDF_BACKEND="hybrid"
-py -m uvicorn api:app --host 127.0.0.1 --port 8000
+py -m uvicorn api.app:app --host 127.0.0.1 --port 8000
 ```
 
 可选后端：
@@ -77,7 +77,7 @@ GROBID 需要先启动服务：
 docker run --rm --init -p 8070:8070 lfoppiano/grobid:0.8.2
 $env:DOCSIM_PDF_BACKEND="grobid"
 $env:GROBID_URL="http://127.0.0.1:8070"
-py -m uvicorn api:app --host 127.0.0.1 --port 8000
+py -m uvicorn api.app:app --host 127.0.0.1 --port 8000
 ```
 
 Docling 默认关闭 OCR 和表格结构识别，以降低本地硬件压力：
@@ -86,7 +86,7 @@ Docling 默认关闭 OCR 和表格结构识别，以降低本地硬件压力：
 $env:DOCSIM_PDF_BACKEND="docling"
 $env:DOCSIM_DOCLING_OCR="0"
 $env:DOCSIM_DOCLING_TABLE_STRUCTURE="0"
-py -m uvicorn api:app --host 127.0.0.1 --port 8000
+py -m uvicorn api.app:app --host 127.0.0.1 --port 8000
 ```
 
 ## 运行
@@ -94,7 +94,7 @@ py -m uvicorn api:app --host 127.0.0.1 --port 8000
 后端：
 
 ```powershell
-py -m uvicorn api:app --host 127.0.0.1 --port 8000
+py -m uvicorn api.app:app --host 127.0.0.1 --port 8000
 ```
 
 如果需要重新构建前端：
@@ -104,7 +104,7 @@ cd frontend
 npm install
 npm run build
 cd ..
-py -m uvicorn api:app --host 127.0.0.1 --port 8000
+py -m uvicorn api.app:app --host 127.0.0.1 --port 8000
 ```
 
 传统 CLI：

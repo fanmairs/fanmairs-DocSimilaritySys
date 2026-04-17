@@ -1,8 +1,13 @@
+from __future__ import annotations
+
 import re
 from typing import Dict, Optional
 
 import numpy as np
+
 from text_processing.cleaners.noise import is_numeric_table_noise
+
+from .common import clamp01
 
 
 def select_topk_indices(scores: np.ndarray, topk: int) -> np.ndarray:
@@ -17,7 +22,12 @@ def select_topk_indices(scores: np.ndarray, topk: int) -> np.ndarray:
     return candidate_idx[np.argsort(scores[candidate_idx])[::-1]]
 
 
-def resolve_outlier_metrics(engine, sims: np.ndarray, peak_sim: float, profile_cfg: Dict) -> Dict[str, float]:
+def resolve_outlier_metrics(
+    sims: np.ndarray,
+    *,
+    peak_sim: float,
+    profile_cfg: Dict,
+) -> Dict[str, float]:
     if sims.size == 0:
         return {
             "mean": 0.0,
@@ -87,7 +97,7 @@ def score_window_candidate(
 
     digit_ratio1 = sum(c.isdigit() for c in text1) / max(1, len(text1))
     digit_ratio2 = sum(c.isdigit() for c in text2) / max(1, len(text2))
-    eng_ratio1 = len(re.findall(r'[a-zA-Z]', text1)) / max(1, len(text1))
+    eng_ratio1 = len(re.findall(r"[a-zA-Z]", text1)) / max(1, len(text1))
 
     edit_similarity = difflib.SequenceMatcher(None, text1, text2).ratio()
 
@@ -125,12 +135,10 @@ def score_window_candidate(
         rule_penalty *= 0.92
         rule_flags.append("tag_mismatch")
 
-    # Keep technical / formula-heavy spans as downgraded evidence instead of hard rejecting them.
-    # This matches the Step5 goal: prefer penalty over silent discard on boundary samples.
-    if text1.count('.') >= 5:
+    if text1.count(".") >= 5:
         rule_penalty *= 0.92
         rule_flags.append("target_many_periods")
-    if text2.count('.') >= 5:
+    if text2.count(".") >= 5:
         rule_penalty *= 0.92
         rule_flags.append("ref_many_periods")
     if digit_ratio1 >= 0.2:
@@ -143,42 +151,34 @@ def score_window_candidate(
         rule_penalty *= 0.88
         rule_flags.append("target_english_heavy")
 
-    eng_ratio2 = len(re.findall(r'[a-zA-Z]', text2)) / max(1, len(text2))
+    eng_ratio2 = len(re.findall(r"[a-zA-Z]", text2)) / max(1, len(text2))
     if eng_ratio2 >= 0.4:
         rule_penalty *= 0.88
         rule_flags.append("ref_english_heavy")
 
-    margin = raw_sim - outlier_threshold
-    margin_norm = engine._clamp01((margin + 0.05) / 0.20)
+    margin = float(raw_sim) - float(outlier_threshold)
+    margin_norm = clamp01((margin + 0.05) / 0.20)
 
-    confidence = raw_sim * (0.65 + 0.35 * margin_norm)
-    confidence *= (0.90 + 0.10 * entity_iou)
-    confidence *= (0.90 + 0.10 * tag_iou)
+    confidence = float(raw_sim) * (0.65 + 0.35 * margin_norm)
+    confidence *= 0.90 + 0.10 * entity_iou
+    confidence *= 0.90 + 0.10 * tag_iou
     confidence *= rule_penalty
     if edit_similarity < 0.12:
         confidence *= 0.90
 
-    effective_score = engine._clamp01(raw_sim * (0.55 + 0.45 * rule_penalty))
+    effective_score = clamp01(float(raw_sim) * (0.55 + 0.45 * rule_penalty))
     return {
-        'target_part': text1,
-        'ref_part': text2,
-        'score': float(effective_score),
-        'raw_score': float(raw_sim),
-        'confidence': float(engine._clamp01(confidence)),
-        'length': len(text1),
-        'target_start': int(item1['start']),
-        'target_end': int(item1['end']),
-        'ref_start': int(item2['start']),
-        'ref_end': int(item2['end']),
-        'match_type': 'window',
-        'rule_penalty': float(engine._clamp01(rule_penalty)),
-        'rule_flags': rule_flags,
+        "target_part": text1,
+        "ref_part": text2,
+        "score": float(effective_score),
+        "raw_score": float(raw_sim),
+        "confidence": float(clamp01(confidence)),
+        "length": len(text1),
+        "target_start": int(item1["start"]),
+        "target_end": int(item1["end"]),
+        "ref_start": int(item2["start"]),
+        "ref_end": int(item2["end"]),
+        "match_type": "window",
+        "rule_penalty": float(clamp01(rule_penalty)),
+        "rule_flags": rule_flags,
     }
-
-
-# Compatibility exports for older imports. New code should import from scoring.window.
-from scoring.window import (  # noqa: E402,F401
-    resolve_outlier_metrics,
-    score_window_candidate,
-    select_topk_indices,
-)

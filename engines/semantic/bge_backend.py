@@ -2,14 +2,23 @@ import re
 
 import numpy as np
 from typing import Dict, List, Optional, Tuple
-from .evidence import (
+from evidence.metrics import (
     calculate_continuity_features,
     calculate_coverage,
     calculate_effective_coverage,
     calculate_match_confidence,
     calculate_raw_coverage,
-    calculate_realistic_score,
     collect_target_intervals,
+)
+from scoring.semantic import (
+    calculate_semantic_excess,
+    calculate_semantic_pair_score,
+    calculate_semantic_risk_score,
+)
+from scoring.window import (
+    resolve_outlier_metrics,
+    score_window_candidate,
+    select_topk_indices,
 )
 from .profiles import DEFAULT_PROFILE, THRESHOLD_PROFILES, resolve_profile
 from .text import (
@@ -27,11 +36,6 @@ from .text import (
     sigmoid,
     split_sentences_with_offsets,
     sum_intervals,
-)
-from .window_scoring import (
-    resolve_outlier_metrics,
-    score_window_candidate,
-    select_topk_indices,
 )
 from text_processing.cleaners.noise import is_numeric_table_noise
 
@@ -589,7 +593,7 @@ class DeepSemanticEngine:
         return select_topk_indices(scores, topk)
 
     def _resolve_outlier_metrics(self, sims: np.ndarray, peak_sim: float, profile_cfg: Dict) -> Dict[str, float]:
-        return resolve_outlier_metrics(self, sims, peak_sim, profile_cfg)
+        return resolve_outlier_metrics(sims, peak_sim=peak_sim, profile_cfg=profile_cfg)
 
     def _score_window_candidate(
         self,
@@ -634,16 +638,16 @@ class DeepSemanticEngine:
         return sum_intervals(intervals)
 
     def _collect_target_intervals(self, plagiarized_parts: List[Dict], target_len: int) -> List[Tuple[int, int]]:
-        return collect_target_intervals(self, plagiarized_parts, target_len)
+        return collect_target_intervals(plagiarized_parts, target_len)
 
     def _calculate_raw_coverage(self, plagiarized_parts: List[Dict], target_len: int) -> float:
-        return calculate_raw_coverage(self, plagiarized_parts, target_len)
+        return calculate_raw_coverage(plagiarized_parts, target_len)
 
     def _calculate_coverage(self, plagiarized_parts: List[Dict], target_len: int) -> float:
-        return calculate_coverage(self, plagiarized_parts, target_len)
+        return calculate_coverage(plagiarized_parts, target_len)
 
     def _calculate_match_confidence(self, plagiarized_parts: List[Dict]) -> float:
-        return calculate_match_confidence(self, plagiarized_parts)
+        return calculate_match_confidence(plagiarized_parts)
 
     def _calculate_effective_coverage(
         self,
@@ -651,14 +655,14 @@ class DeepSemanticEngine:
         weighted_coverage: float,
         confidence: float,
     ) -> float:
-        return calculate_effective_coverage(self, raw_coverage, weighted_coverage, confidence)
+        return calculate_effective_coverage(raw_coverage, weighted_coverage, confidence)
 
     def _calculate_continuity_features(
         self,
         plagiarized_parts: List[Dict],
         target_len: int,
     ) -> Dict[str, float]:
-        return calculate_continuity_features(self, plagiarized_parts, target_len)
+        return calculate_continuity_features(plagiarized_parts, target_len)
 
     def _calculate_realistic_score(
         self,
@@ -673,19 +677,20 @@ class DeepSemanticEngine:
         longest_run_ratio: float,
         top3_run_ratio: float,
     ) -> Tuple[float, float, float, float, float, float]:
-        return calculate_realistic_score(
-            self,
-            profile_name,
-            profile_cfg,
+        effective_coverage = self._calculate_effective_coverage(
             raw_coverage,
             weighted_coverage,
             confidence,
-            doc_semantic,
-            paragraph_semantic,
-            hit_count,
-            longest_run_ratio,
-            top3_run_ratio,
         )
+        return calculate_semantic_pair_score(
+            profile_cfg,
+            effective_coverage=effective_coverage,
+            confidence=confidence,
+            doc_semantic=doc_semantic,
+            paragraph_semantic=paragraph_semantic,
+            longest_run_ratio=longest_run_ratio,
+            top3_run_ratio=top3_run_ratio,
+        ).as_tuple()
 
     def _get_target_semantic_context(self, target_text: str):
         target_norm = self._normalize_text(target_text)
@@ -774,9 +779,9 @@ class DeepSemanticEngine:
 
         # Convert topic-level semantic similarity into plagiarism-sensitive semantic evidence.
         # Similar-domain docs can be semantically close; only the excess above profile floor contributes.
-        semantic_floor = float(profile_cfg.get("semantic_floor", 0.0))
-        semantic_excess = self._clamp01(
-            (semantic_scores["doc_semantic"] - semantic_floor) / max(1e-6, 1.0 - semantic_floor)
+        semantic_excess = calculate_semantic_excess(
+            semantic_scores["doc_semantic"],
+            float(profile_cfg.get("semantic_floor", 0.0)),
         )
 
         final_score, effective_coverage, semantic_signal, evidence_score, continuity_bonus, low_evidence_cap = self._calculate_realistic_score(
@@ -792,43 +797,12 @@ class DeepSemanticEngine:
             continuity["top3_run_ratio"],
         )
 
-        weights = profile_cfg["score_weights"]
-        base_score = (
-            weights["doc_semantic"] * semantic_excess
-            + weights["coverage"] * weighted_coverage
-            + weights["confidence"] * confidence
+        risk_breakdown = calculate_semantic_risk_score(
+            profile_cfg,
+            semantic_excess,
+            weighted_coverage,
+            confidence,
         )
-
-        gate_cfg = profile_cfg["score_gate"]
-        evidence_strength = (weighted_coverage * confidence) ** 0.5
-        gate = self._clamp01(
-            gate_cfg["base"]
-            + gate_cfg["coverage"] * weighted_coverage
-            + gate_cfg["confidence"] * confidence
-            + gate_cfg.get("evidence", 0.0) * evidence_strength
-        )
-
-        risk_score = self._clamp01(base_score * gate)
-
-        # Strong suppression for "same topic, low concrete overlap" cases.
-        if weighted_coverage < gate_cfg["low_cov_th"]:
-            low_cov_cap = gate_cfg.get("low_cov_cap")
-            if low_cov_cap is not None:
-                risk_score = min(risk_score, low_cov_cap)
-        elif weighted_coverage < gate_cfg["mid_cov_th"] and confidence < gate_cfg["mid_conf_th"]:
-            risk_score = min(risk_score, gate_cfg["mid_cov_cap"])
-        elif (
-            weighted_coverage < gate_cfg.get("topic_cov_th", 0.0)
-            and confidence < gate_cfg.get("topic_conf_th", 1.0)
-        ):
-            risk_score = min(risk_score, gate_cfg.get("topic_cap", 1.0))
-
-        # Additional guard for same-domain cases: moderate confidence but weak coverage.
-        if (
-            weighted_coverage < gate_cfg.get("low_evidence_cov_th", 0.0)
-            and confidence < gate_cfg.get("low_evidence_conf_th", 1.0)
-        ):
-            risk_score = min(risk_score, gate_cfg.get("low_evidence_cap", 1.0))
 
         return {
             "profile": profile_name,
@@ -844,10 +818,10 @@ class DeepSemanticEngine:
             "continuity_longest": float(continuity["longest_run_ratio"]),
             "continuity_top3": float(continuity["top3_run_ratio"]),
             "continuity_hit_groups": int(continuity["merged_hit_count"]),
-            "base_score": float(self._clamp01(base_score)),
-            "gate": float(gate),
+            "base_score": float(risk_breakdown.base_score),
+            "gate": float(risk_breakdown.gate),
             "final_score": float(self._clamp01(final_score)),
-            "risk_score": float(self._clamp01(risk_score)),
+            "risk_score": float(risk_breakdown.risk_score),
             "semantic_signal": float(semantic_signal),
             "evidence_score": float(evidence_score),
             "continuity_bonus": float(continuity_bonus),

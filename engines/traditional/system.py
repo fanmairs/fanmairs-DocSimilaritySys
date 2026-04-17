@@ -3,8 +3,9 @@ import time
 import argparse
 import glob
 from document_readers.factory import read_document_by_type as read_document_file
+from evidence import normalize_evidence_spans
+from scoring.traditional import calculate_risk_score, fuse_similarity_scores
 from text_processing.cleaners.academic import clean_academic_noise as clean_academic_noise_text
-from .scoring import calculate_risk_score, fuse_similarity_scores
 
 # 导入我们亲手打造的四大核心模块
 from text_processing.tokenizers import TextPreprocessor
@@ -205,7 +206,13 @@ class PlagiarismDetectorSystem:
                     ref_text = self.read_document(res['file'])
                     if body_mode:
                         ref_text = self.clean_academic_noise(ref_text)
-                    res['plagiarized_parts'] = self.window_detector.check(target_text, ref_text)
+                    raw_parts = self.window_detector.check(target_text, ref_text)
+                    res['plagiarized_parts'] = normalize_evidence_spans(
+                        raw_parts,
+                        engine="traditional",
+                        source=os.path.basename(res['file']),
+                        default_match_type="traditional_window",
+                    )
                 except Exception as e:
                     res['plagiarized_parts'] = []
             else:

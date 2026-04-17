@@ -6,6 +6,7 @@ from fastapi import HTTPException
 
 from engines.semantic.bge_backend import DeepSemanticEngine
 from engines.semantic.coarse_retrieval import CoarseRetrievalConfig
+from reports import build_semantic_result
 
 
 BGE_STRATEGY_COARSE = "coarse_then_fine"
@@ -79,33 +80,12 @@ def build_basic_bert_result(
     score_breakdown: Dict[str, float],
     plagiarized_parts: List[Dict[str, object]],
 ) -> Dict[str, object]:
-    return {
-        "file": os.path.basename(ref_path).replace("ref_", ""),
-        "sim_bert": float(score_breakdown["final_score"]),
-        "sim_bert_risk": float(score_breakdown.get("risk_score", score_breakdown["final_score"])),
-        "sim_bert_doc": float(score_breakdown["doc_semantic"]),
-        "sim_bert_doc_excess": float(score_breakdown.get("doc_semantic_excess", score_breakdown["doc_semantic"])),
-        "sim_bert_coverage": float(score_breakdown["coverage"]),
-        "sim_bert_coverage_raw": float(score_breakdown.get("coverage_raw", score_breakdown["coverage"])),
-        "sim_bert_coverage_weighted": float(score_breakdown.get("coverage_weighted", score_breakdown["coverage"])),
-        "sim_bert_coverage_effective": float(score_breakdown.get("coverage_effective", score_breakdown["coverage"])),
-        "sim_bert_confidence": float(score_breakdown["confidence"]),
-        "sim_bert_base": float(score_breakdown["base_score"]),
-        "sim_bert_gate": float(score_breakdown["gate"]),
-        "sim_bert_hits": int(score_breakdown["hit_count"]),
-        "sim_bert_semantic_signal": float(score_breakdown.get("semantic_signal", 0.0)),
-        "sim_bert_evidence": float(score_breakdown.get("evidence_score", 0.0)),
-        "sim_bert_continuity_bonus": float(score_breakdown.get("continuity_bonus", 0.0)),
-        "sim_bert_continuity_longest": float(score_breakdown.get("continuity_longest", 0.0)),
-        "sim_bert_continuity_top3": float(score_breakdown.get("continuity_top3", 0.0)),
-        "sim_bert_low_evidence_cap": float(score_breakdown.get("low_evidence_cap", 1.0)),
-        "sim_bert_legacy_coverage": float(score_breakdown.get("coverage_raw", score_breakdown["coverage"])),
-        "sim_bert_verified": True,
-        "sim_bert_candidate": True,
-        "bert_profile": bert_profile,
-        "retrieval_stage": "fine_verified",
-        "plagiarized_parts": plagiarized_parts,
-    }
+    return build_semantic_result(
+        ref_path,
+        bert_profile,
+        score_breakdown,
+        plagiarized_parts,
+    )
 
 
 def estimate_text_window_count(bert_engine, text: str) -> int:

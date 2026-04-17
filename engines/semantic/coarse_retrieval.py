@@ -8,11 +8,11 @@ from typing import Dict, List, Optional, Sequence
 
 import numpy as np
 
+from scoring.coarse import calculate_paragraph_hotspot, compose_coarse_score
+from scoring.common import clamp01
+from reports import build_semantic_coarse_result, build_semantic_verified_result
+
 from .bge_backend import DeepSemanticEngine
-
-
-def _clamp01(value: float) -> float:
-    return float(max(0.0, min(1.0, value)))
 
 
 @dataclass
@@ -72,7 +72,7 @@ class CoarseRetrievalConfig:
             normalized_values[name] = max(1, int(round(normalized_values[name])))
 
         for name in ratio_fields:
-            normalized_values[name] = _clamp01(float(normalized_values[name]))
+            normalized_values[name] = clamp01(float(normalized_values[name]))
 
         normalized_values["max_candidates"] = max(
             normalized_values["min_candidates"],
@@ -354,7 +354,7 @@ class CoarseRetriever:
             denominator += max(left, right)
         if denominator <= 0:
             return 0.0
-        return _clamp01(numerator / denominator)
+        return clamp01(numerator / denominator)
 
     def _compose_coarse_score(
         self,
@@ -362,17 +362,11 @@ class CoarseRetriever:
         paragraph_hotspot: float,
         lexical_anchor: float,
     ) -> float:
-        score = 0.45 * paragraph_hotspot + 0.35 * doc_semantic + 0.20 * lexical_anchor
-
-        # Suppress same-topic false positives when semantic similarity lacks lexical anchors.
-        if doc_semantic >= 0.86 and paragraph_hotspot < 0.58 and lexical_anchor < 0.12:
-            score = min(score, 0.62)
-
-        # Allow paragraph hotspots to dominate when local evidence is clearly strong.
-        if paragraph_hotspot >= 0.82:
-            score = max(score, 0.55 * paragraph_hotspot + 0.25 * doc_semantic + 0.20 * lexical_anchor)
-
-        return _clamp01(score)
+        return compose_coarse_score(
+            doc_semantic=doc_semantic,
+            paragraph_hotspot=paragraph_hotspot,
+            lexical_anchor=lexical_anchor,
+        )
 
     def build_target_context(self, text: str) -> TargetContext:
         normalized_text = DeepSemanticEngine._normalize_text(text)
@@ -470,10 +464,10 @@ class CoarseRetriever:
                 "best_target_paragraph_scores": [0.0] * len(target_ctx.paragraphs),
             }
 
-        topk = min(self.config.paragraph_score_top_k, best_per_target.size)
-        topk_mean = float(np.mean(np.sort(best_per_target)[-topk:]))
-        overall_mean = float(np.mean(best_per_target))
-        paragraph_hotspot = _clamp01(0.70 * topk_mean + 0.30 * overall_mean)
+        paragraph_hotspot = calculate_paragraph_hotspot(
+            best_per_target,
+            top_k=self.config.paragraph_score_top_k,
+        )
         return {
             "paragraph_hotspot": paragraph_hotspot,
             "best_target_paragraph_scores": best_per_target.astype(float).tolist(),
@@ -488,7 +482,7 @@ class CoarseRetriever:
         for ref_ctx in ref_contexts:
             doc_semantic = 0.0
             if target_ctx.doc_embedding is not None and ref_ctx.doc_embedding is not None:
-                doc_semantic = _clamp01(
+                doc_semantic = clamp01(
                     float(np.dot(target_ctx.doc_embedding, ref_ctx.doc_embedding))
                 )
 
@@ -556,49 +550,7 @@ class CoarseRetriever:
 
     @staticmethod
     def build_coarse_only_result(item: Dict[str, object], bert_profile: str) -> Dict[str, object]:
-        coarse_score = float(item.get("coarse_score", 0.0))
-        doc_semantic = float(item.get("doc_semantic", 0.0))
-        paragraph_hotspot = float(item.get("paragraph_hotspot", 0.0))
-        lexical_anchor = float(item.get("lexical_anchor", 0.0))
-        return {
-            "file": item["file"],
-            "sim_bert": coarse_score,
-            "sim_bert_risk": coarse_score,
-            "sim_bert_doc": doc_semantic,
-            "sim_bert_doc_excess": doc_semantic,
-            "sim_bert_coverage": 0.0,
-            "sim_bert_coverage_raw": 0.0,
-            "sim_bert_coverage_weighted": 0.0,
-            "sim_bert_coverage_effective": 0.0,
-            "sim_bert_confidence": 0.0,
-            "sim_bert_base": coarse_score,
-            "sim_bert_gate": 1.0,
-            "sim_bert_hits": 0,
-            "sim_bert_semantic_signal": doc_semantic,
-            "sim_bert_evidence": paragraph_hotspot,
-            "sim_bert_continuity_bonus": 0.0,
-            "sim_bert_continuity_longest": 0.0,
-            "sim_bert_continuity_top3": 0.0,
-            "sim_bert_low_evidence_cap": 1.0,
-            "sim_bert_legacy_coverage": 0.0,
-            "sim_bert_coarse": coarse_score,
-            "sim_bert_coarse_doc": doc_semantic,
-            "sim_bert_coarse_para": paragraph_hotspot,
-            "sim_bert_coarse_lex": lexical_anchor,
-            "sim_bert_verified": False,
-            "sim_bert_candidate": bool(item.get("is_candidate", False)),
-            "sim_bert_candidate_rank": item.get("candidate_rank"),
-            "sim_bert_coarse_rank": item.get("coarse_rank"),
-            "retrieval_stage": "coarse_only",
-            "retrieval_reason": item.get("candidate_reason", ""),
-            "retrieval_candidate_pool_size": int(item.get("candidate_pool_size", 0)),
-            "retrieval_reference_count": int(item.get("reference_count", 0)),
-            "retrieval_theme_mean": float(item.get("theme_mean", 0.0)),
-            "retrieval_theme_std": float(item.get("theme_std", 0.0)),
-            "retrieval_topic_concentrated": bool(item.get("topic_concentrated", False)),
-            "bert_profile": bert_profile,
-            "plagiarized_parts": [],
-        }
+        return build_semantic_coarse_result(item, bert_profile)
 
     @classmethod
     def build_verified_result(
@@ -608,53 +560,9 @@ class CoarseRetriever:
         score_breakdown: Dict[str, float],
         plagiarized_parts: List[Dict[str, object]],
     ) -> Dict[str, object]:
-        result = cls.build_coarse_only_result(item, bert_profile)
-        result.update(
-            {
-                "sim_bert": float(score_breakdown["final_score"]),
-                "sim_bert_risk": float(
-                    score_breakdown.get("risk_score", score_breakdown["final_score"])
-                ),
-                "sim_bert_doc": float(score_breakdown["doc_semantic"]),
-                "sim_bert_doc_excess": float(
-                    score_breakdown.get("doc_semantic_excess", score_breakdown["doc_semantic"])
-                ),
-                "sim_bert_coverage": float(score_breakdown["coverage"]),
-                "sim_bert_coverage_raw": float(
-                    score_breakdown.get("coverage_raw", score_breakdown["coverage"])
-                ),
-                "sim_bert_coverage_weighted": float(
-                    score_breakdown.get("coverage_weighted", score_breakdown["coverage"])
-                ),
-                "sim_bert_coverage_effective": float(
-                    score_breakdown.get("coverage_effective", score_breakdown["coverage"])
-                ),
-                "sim_bert_confidence": float(score_breakdown["confidence"]),
-                "sim_bert_base": float(score_breakdown["base_score"]),
-                "sim_bert_gate": float(score_breakdown["gate"]),
-                "sim_bert_hits": int(score_breakdown["hit_count"]),
-                "sim_bert_semantic_signal": float(
-                    score_breakdown.get("semantic_signal", 0.0)
-                ),
-                "sim_bert_evidence": float(score_breakdown.get("evidence_score", 0.0)),
-                "sim_bert_continuity_bonus": float(
-                    score_breakdown.get("continuity_bonus", 0.0)
-                ),
-                "sim_bert_continuity_longest": float(
-                    score_breakdown.get("continuity_longest", 0.0)
-                ),
-                "sim_bert_continuity_top3": float(
-                    score_breakdown.get("continuity_top3", 0.0)
-                ),
-                "sim_bert_low_evidence_cap": float(
-                    score_breakdown.get("low_evidence_cap", 1.0)
-                ),
-                "sim_bert_legacy_coverage": float(
-                    score_breakdown.get("coverage_raw", score_breakdown["coverage"])
-                ),
-                "sim_bert_verified": True,
-                "retrieval_stage": "fine_verified",
-                "plagiarized_parts": plagiarized_parts,
-            }
+        return build_semantic_verified_result(
+            item,
+            bert_profile,
+            score_breakdown,
+            plagiarized_parts,
         )
-        return result

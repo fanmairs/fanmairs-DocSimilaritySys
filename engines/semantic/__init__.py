@@ -23,7 +23,7 @@ def __getattr__(name):
 
         return getattr(coarse_retrieval, name)
     if name == "GlobalEvidenceAggregator":
-        from .global_evidence import GlobalEvidenceAggregator
+        from evidence import GlobalEvidenceAggregator
 
         return GlobalEvidenceAggregator
     raise AttributeError(name)
