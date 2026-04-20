@@ -1,7 +1,5 @@
 import os
 import time
-import argparse
-import glob
 from document_readers.factory import read_document_by_type as read_document_file
 from evidence import normalize_evidence_spans
 from scoring.traditional import calculate_risk_score, fuse_similarity_scores
@@ -277,70 +275,3 @@ class PlagiarismDetectorSystem:
         else:
             print("✅ 结论：【合格】未发现高度相似文档。")
         print("=" * 60 + "\n")
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="文档相似度比对与抄袭检测工具")
-    parser.add_argument('target', nargs='?', help="待检测的文档路径 (例如: data/检测文档.txt)")
-    parser.add_argument('reference', nargs='?', help="参考文档路径或目录 (例如: data/doc2.txt 或 data/)")
-    parser.add_argument('--stopwords', default='dicts/stopwords.txt', help="停用词表路径")
-    parser.add_argument('--lsa_dim', type=int, default=3, help="LSA 降维维度")
-    parser.add_argument(
-        '--semantic_embeddings',
-        default='dicts/embeddings/fasttext_zh.vec',
-        help="词向量模型路径(.vec)，用于传统模式同义词穿透"
-    )
-    parser.add_argument('--semantic_threshold', type=float, default=0.55, help="词向量相似阈值")
-    parser.add_argument('--semantic_weight', type=float, default=0.35, help="语义分数融合权重(0~0.6)")
-
-    args = parser.parse_args()
-
-    # 默认配置 (如果用户在 PyCharm 中直接点击运行，没有传参数，默认用这个)
-    # 你可以在这里修改默认的待检测文档！
-    target_file = args.target if args.target else 'data/AI医疗_原文.txt'
-    reference_input = args.reference if args.reference else 'data/'
-    stopwords_file = args.stopwords
-
-    # 处理参考文档列表
-    reference_files = []
-    
-    # 修改这里的逻辑：如果用户什么参数都没传，默认扫描 data/ 目录
-    if not args.reference:
-        reference_input = "data/"
-        
-    if os.path.isdir(reference_input):
-        # 如果是目录，扫描所有 .txt 文件
-        reference_files = glob.glob(os.path.join(reference_input, "*.txt"))
-        # 排除目标文档自己
-        reference_files = [f for f in reference_files if os.path.abspath(f) != os.path.abspath(target_file)]
-    else:
-        # 如果是单个文件
-        if os.path.exists(reference_input):
-            reference_files = [reference_input]
-        else:
-            print(f"❌ 参考文档路径不存在: {reference_input}")
-            # 如果指定的文件不存在，再尝试作为目录扫描
-            print("尝试扫描默认 data 目录...")
-            reference_files = glob.glob(os.path.join("data", "*.txt"))
-            reference_files = [f for f in reference_files if os.path.abspath(f) != os.path.abspath(target_file)]
-
-    if not os.path.exists(target_file):
-        print(f"❌ 待检测文档不存在: {target_file}")
-        print("请提供正确的文件路径，或确保 data/检测文档.txt 存在。")
-        exit(1)
-
-    if not reference_files:
-        print("❌ 未找到任何参考文档。")
-        exit(1)
-
-    # 实例化系统并执行
-    detector = PlagiarismDetectorSystem(
-        stopwords_path=stopwords_file,
-        lsa_components=args.lsa_dim,
-        synonyms_path='dicts/synonyms.txt',
-        semantic_embeddings_path=args.semantic_embeddings,
-        semantic_threshold=args.semantic_threshold,
-        semantic_weight=args.semantic_weight
-    )
-    results = detector.check_similarity(target_file, reference_files)
-    detector.print_report(target_file, results)

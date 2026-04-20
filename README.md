@@ -11,11 +11,12 @@ DocSimilaritySys 是一个面向中文文档的相似度比对与疑似抄袭检
 
 ```text
 DocSimilaritySys/
-├── api.py                         # FastAPI 后端入口
+├── api/                           # FastAPI 后端应用、路由、服务与 worker
 ├── api_bge_helpers.py             # API 层 BGE 参数、复核和窗口估算辅助
+├── config/                        # 运行配置、路径和 PDF 后端设置
 ├── frontend_static.py             # 前端静态文件托管
 ├── main.py                        # 传统检测 CLI 入口
-├── task_store.py                  # SQLite 任务状态存储
+├── tasks/                         # 任务模型、仓储接口与 SQLite 持久化
 ├── document_readers/              # 文档读取模块
 │   ├── factory.py                 # 按扩展名分发 TXT/DOCX/PDF 读取器
 │   ├── txt/reader.py              # TXT 读取
@@ -59,7 +60,6 @@ DocSimilaritySys/
 默认 PDF 检测使用 `hybrid`，也就是 PyMuPDF 读取文本块，pdfplumber 识别表格区域，再由项目规则过滤表格、图表数字、页眉页脚、公式和图注。这是当前最稳的日常方案。
 
 ```powershell
-$env:DOCSIM_PDF_BACKEND="hybrid"
 py -m uvicorn api.app:app --host 127.0.0.1 --port 8000
 ```
 
@@ -114,11 +114,29 @@ py main.py
 py main.py data/target.txt data/
 ```
 
+## 配置模块
+
+运行配置集中在 `config/`：
+
+- `config/paths.py` 定义项目根目录、上传目录、任务数据库、词典和词向量默认路径。
+- `config/pdf_backend.py` 定义 PDF 后端取值、默认后端和 GROBID 默认连接信息。
+- `config/settings.py` 从环境变量生成 `AppSettings`，API、CLI、PDF reader 和任务存储都通过这里读取配置。
+
+默认情况下不需要设置环境变量；`hybrid` PDF 后端、`temp_uploads/`、`tasks.db`、`dicts/` 资源都会自动使用项目根目录下的默认位置。只有需要切换运行策略时再设置：
+
+```powershell
+$env:DOCSIM_PDF_BACKEND="grobid"
+$env:GROBID_URL="http://127.0.0.1:8070"
+$env:DOCSIM_TEMP_UPLOAD_DIR="temp_uploads_dev"
+$env:DOCSIM_TASK_DB_FILE="tasks_dev.db"
+py -m uvicorn api.app:app --host 127.0.0.1 --port 8000
+```
+
 ## 检测流程
 
 BGE 深度语义模式：
 
-1. `api.py` 接收上传文件，写入 `task_store.py` 任务表。
+1. `api/routes/tasks.py` 接收上传文件，通过 `tasks/sqlite_store.py` 写入任务表。
 2. 后台 worker 通过 `document_readers.factory.read_document_by_type` 提取文本。
 3. 如果选择粗筛，`engines.semantic.coarse_retrieval` 先筛出候选参考文档。
 4. `engines.semantic.bge_backend` 对候选文档执行 BGE 窗口级细检。

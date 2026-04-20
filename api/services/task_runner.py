@@ -7,6 +7,7 @@ from api_bge_helpers import (
     build_basic_bert_result,
     run_bert_fine_verification,
 )
+from config.settings import get_settings
 from evidence import GlobalEvidenceAggregator
 from reports import build_report_payload, build_traditional_result, sort_report_items
 
@@ -29,15 +30,16 @@ class TaskRunner:
         from engines.semantic.coarse_retrieval import CoarseRetriever
         from engines.traditional.system import PlagiarismDetectorSystem
 
+        settings = get_settings()
         print(">>> [GPU Queue] Loading semantic and traditional engines...")
         self.bert_engine = DeepSemanticEngine()
         self.traditional_system = PlagiarismDetectorSystem(
-            stopwords_path="dicts/stopwords.txt",
-            lsa_components=3,
-            synonyms_path="dicts/synonyms.txt",
-            semantic_embeddings_path="dicts/embeddings/fasttext_zh.vec",
-            semantic_threshold=0.55,
-            semantic_weight=0.35,
+            stopwords_path=settings.stopwords_path,
+            lsa_components=settings.lsa_components,
+            synonyms_path=settings.synonyms_path,
+            semantic_embeddings_path=settings.semantic_embeddings_path,
+            semantic_threshold=settings.semantic_threshold,
+            semantic_weight=settings.semantic_weight,
         )
         self.coarse_retriever = CoarseRetriever(
             self.bert_engine,

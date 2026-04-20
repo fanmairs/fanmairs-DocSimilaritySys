@@ -1,4 +1,5 @@
 import re
+from config.settings import get_settings
 from text_processing.tokenizers import TextPreprocessor
 from .tfidf_backend import WhiteBoxTFIDF
 from .similarity import calculate_cosine_similarity
@@ -11,18 +12,19 @@ class WindowDetector:
         window_size=30,
         step=15,
         synonyms_path=None,
-        semantic_embeddings_path='dicts/embeddings/fasttext_zh.vec',
+        semantic_embeddings_path=None,
         semantic_threshold=0.55,
         semantic_weight=0.25
     ):
+        settings = get_settings()
         # 保留原来的参数以防其他地方调用报错，但我们现在改用自然句切分
         self.window_size = window_size  
         self.step = step  
-        self.synonyms_path = synonyms_path
+        self.synonyms_path = synonyms_path or settings.synonyms_path
         self.semantic_weight = max(0.0, min(float(semantic_weight), 0.5))
         self.semantic_scorer = SoftSemanticScorer(
-            embeddings_path=semantic_embeddings_path,
-            synonyms_path=synonyms_path,
+            embeddings_path=semantic_embeddings_path or settings.semantic_embeddings_path,
+            synonyms_path=self.synonyms_path,
             similarity_threshold=semantic_threshold,
             max_terms=140
         )
@@ -62,7 +64,7 @@ class WindowDetector:
 
     def check(self, text1, text2):
         """细粒度对比：窗口 vs 窗口"""
-        pre = TextPreprocessor(stopwords_path='dicts/stopwords.txt', synonyms_path=self.synonyms_path)
+        pre = TextPreprocessor(stopwords_path=get_settings().stopwords_path, synonyms_path=self.synonyms_path)
 
         # 1. 切片
         win1 = self.sliding_window(text1)

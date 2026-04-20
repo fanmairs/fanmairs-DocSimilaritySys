@@ -1,8 +1,9 @@
-import os
 import re
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
 
+from config.pdf_backend import resolve_pdf_backend
+from config.settings import get_settings
 from text_processing.cleaners.noise import filter_detection_text_blocks, is_numeric_table_noise
 
 from .grobid_backend import read_pdf_body_with_grobid
@@ -233,25 +234,12 @@ def _read_pdf_with_docling(filepath: str) -> str:
     except ImportError as exc:
         raise RuntimeError("docling is not installed") from exc
 
+    settings = get_settings()
     pipeline_options = PdfPipelineOptions()
-    pipeline_options.do_ocr = os.getenv("DOCSIM_DOCLING_OCR", "0").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-    pipeline_options.do_table_structure = os.getenv(
-        "DOCSIM_DOCLING_TABLE_STRUCTURE",
-        "0",
-    ).strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-    artifacts_path = os.getenv("DOCLING_ARTIFACTS_PATH")
-    if artifacts_path:
-        pipeline_options.artifacts_path = artifacts_path
+    pipeline_options.do_ocr = settings.docling_ocr
+    pipeline_options.do_table_structure = settings.docling_table_structure
+    if settings.docling_artifacts_path:
+        pipeline_options.artifacts_path = settings.docling_artifacts_path
 
     converter = DocumentConverter(
         format_options={
@@ -288,7 +276,7 @@ def read_pdf_for_detection(filepath: str, backend: Optional[str] = None) -> str:
     - docling: Docling conversion first, then fallback to hybrid.
     - grobid: GROBID TEI body extraction first, then fallback to hybrid.
     """
-    selected_backend = (backend or os.getenv("DOCSIM_PDF_BACKEND") or "hybrid").strip().lower()
+    selected_backend = resolve_pdf_backend(backend or get_settings().pdf_backend)
 
     if selected_backend == "grobid":
         try:

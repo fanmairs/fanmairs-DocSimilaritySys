@@ -7,6 +7,7 @@ import argparse
 import glob
 import os
 
+from config.settings import get_settings
 from engines.traditional.system import PlagiarismDetectorSystem
 
 
@@ -33,18 +34,19 @@ def _resolve_reference_files(target_file: str, reference_input: str):
 
 
 def main():
+    settings = get_settings()
     parser = argparse.ArgumentParser(description="Document similarity and plagiarism detection CLI")
     parser.add_argument("target", nargs="?", help="Target document path")
     parser.add_argument("reference", nargs="?", help="Reference document path or directory")
-    parser.add_argument("--stopwords", default="dicts/stopwords.txt", help="Stopwords file path")
-    parser.add_argument("--lsa_dim", type=int, default=3, help="LSA dimension")
+    parser.add_argument("--stopwords", default=settings.stopwords_path, help="Stopwords file path")
+    parser.add_argument("--lsa_dim", type=int, default=settings.lsa_components, help="LSA dimension")
     parser.add_argument(
         "--semantic_embeddings",
-        default="dicts/embeddings/fasttext_zh.vec",
+        default=settings.semantic_embeddings_path,
         help="Word vector model path for traditional soft semantic scoring",
     )
-    parser.add_argument("--semantic_threshold", type=float, default=0.55)
-    parser.add_argument("--semantic_weight", type=float, default=0.35)
+    parser.add_argument("--semantic_threshold", type=float, default=settings.semantic_threshold)
+    parser.add_argument("--semantic_weight", type=float, default=settings.semantic_weight)
     args = parser.parse_args()
 
     target_file = args.target if args.target else "data/AI医疗_原文.txt"
@@ -62,7 +64,7 @@ def main():
     detector = PlagiarismDetectorSystem(
         stopwords_path=args.stopwords,
         lsa_components=args.lsa_dim,
-        synonyms_path="dicts/synonyms.txt",
+        synonyms_path=settings.synonyms_path,
         semantic_embeddings_path=args.semantic_embeddings,
         semantic_threshold=args.semantic_threshold,
         semantic_weight=args.semantic_weight,

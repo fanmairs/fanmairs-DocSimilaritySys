@@ -7,7 +7,8 @@ import shutil
 import uuid
 from typing import Callable, Dict, List, Optional
 
-from task_store import create_task, get_task, init_db, update_task
+from config.settings import get_settings
+from tasks.sqlite_store import create_task, get_task, init_db, update_task
 
 from .services.task_runner import TaskRunner
 from .services.uploads import (
@@ -39,7 +40,7 @@ class ApiRuntime:
     def __init__(
         self,
         *,
-        temp_dir: str = "temp_uploads",
+        temp_dir: Optional[str] = None,
         task_runner: Optional[TaskRunner] = None,
         task_queue: Optional[queue.Queue] = None,
         task_store_init: Callable[[], None] = init_db,
@@ -47,7 +48,8 @@ class ApiRuntime:
         get_task_fn: Callable[[str], Optional[Dict[str, object]]] = get_task,
         update_task_fn: Callable[..., None] = update_task,
     ):
-        self.temp_dir = temp_dir
+        settings = get_settings()
+        self.temp_dir = temp_dir or settings.temp_upload_dir
         self.task_runner = task_runner or TaskRunner()
         self.queue = task_queue or queue.Queue()
         self._create_task = create_task_fn

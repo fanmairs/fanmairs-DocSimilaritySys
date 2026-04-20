@@ -6,6 +6,8 @@ import threading
 import time
 from typing import Callable, Dict, Optional
 
+from tasks.models import TaskStatus
+
 from ..services.task_runner import TaskRunner
 
 
@@ -42,7 +44,7 @@ class GpuTaskWorker:
             task_id = str(task["id"])
             session_dir = str(task["session_dir"])
             print(f">>> [Task Worker] Processing queued task: {task_id}")
-            self._update_task(task_id, "processing")
+            self._update_task(task_id, TaskStatus.PROCESSING)
             start_time = time.time()
 
             try:
@@ -50,7 +52,7 @@ class GpuTaskWorker:
                 cost_time = time.time() - start_time
                 self._update_task(
                     task_id,
-                    "completed",
+                    TaskStatus.COMPLETED,
                     result=result_payload,
                     cost_time=cost_time,
                 )
@@ -62,7 +64,7 @@ class GpuTaskWorker:
                 cost_time = time.time() - start_time
                 self._update_task(
                     task_id,
-                    "failed",
+                    TaskStatus.FAILED,
                     message=str(exc),
                     cost_time=cost_time,
                 )

@@ -5,6 +5,7 @@ from typing import List
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from api_bge_helpers import window_recommendation, window_scale_level
+from config.settings import get_settings
 
 from ..dependencies import get_runtime
 from ..runtime import ApiRuntime
@@ -16,13 +17,14 @@ router = APIRouter(prefix="/api", tags=["preview"])
 def _create_preview_reader():
     from engines.traditional.system import PlagiarismDetectorSystem
 
+    settings = get_settings()
     return PlagiarismDetectorSystem(
-        stopwords_path="dicts/stopwords.txt",
-        lsa_components=3,
-        synonyms_path="dicts/synonyms.txt",
-        semantic_embeddings_path="dicts/embeddings/fasttext_zh.vec",
-        semantic_threshold=0.55,
-        semantic_weight=0.35,
+        stopwords_path=settings.stopwords_path,
+        lsa_components=settings.lsa_components,
+        synonyms_path=settings.synonyms_path,
+        semantic_embeddings_path=settings.semantic_embeddings_path,
+        semantic_threshold=settings.semantic_threshold,
+        semantic_weight=settings.semantic_weight,
     )
 
 

@@ -6,10 +6,9 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from typing import List, Optional
 
+from config.pdf_backend import DEFAULT_GROBID_URL
+from config.settings import get_settings
 from text_processing.cleaners.noise import filter_detection_text_blocks
-
-
-DEFAULT_GROBID_URL = "http://127.0.0.1:8070"
 
 
 def _strip_namespace(tag: str) -> str:
@@ -100,9 +99,10 @@ def process_fulltext_document(
     grobid_url: Optional[str] = None,
     timeout: Optional[float] = None,
 ) -> str:
-    base_url = (grobid_url or os.getenv("GROBID_URL") or DEFAULT_GROBID_URL).rstrip("/")
+    settings = get_settings()
+    base_url = (grobid_url or settings.grobid_url).rstrip("/")
     endpoint = f"{base_url}/api/processFulltextDocument"
-    timeout_seconds = float(timeout or os.getenv("GROBID_TIMEOUT", "45"))
+    timeout_seconds = float(timeout if timeout is not None else settings.grobid_timeout)
     body, boundary = _build_multipart_body(
         filepath,
         fields={

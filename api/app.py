@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import os
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from config.settings import get_settings
 from frontend_static import serve_frontend_path
 
 from .routes import config, preview, tasks
@@ -51,9 +50,8 @@ app = create_app()
 def run() -> None:
     import uvicorn
 
-    host = os.getenv("DOCSIM_HOST", "0.0.0.0")
-    port = int(os.getenv("DOCSIM_PORT", "8000"))
-    uvicorn.run(app, host=host, port=port)
+    settings = get_settings()
+    uvicorn.run(app, host=settings.host, port=settings.port)
 
 
 if __name__ == "__main__":
