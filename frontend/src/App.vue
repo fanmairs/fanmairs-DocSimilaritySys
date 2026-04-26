@@ -1,437 +1,126 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { api } from "./api/client";
+import { computed, onMounted } from "vue";
+import { RouterLink, RouterView, useRoute } from "vue-router";
 import {
-  cloneCoarseConfig,
-  coarseConfigDefaults,
-  sanitizeCoarseConfig
-} from "./config/coarseRetrieval";
-import HeroBanner from "./components/HeroBanner.vue";
-import ControlPanel from "./components/ControlPanel.vue";
-import ResultsPanel from "./components/ResultsPanel.vue";
+  Activity,
+  Database,
+  FileStack,
+  FileText,
+  Gauge,
+  LayoutDashboard
+} from "lucide-vue-next";
 import PreviewModal from "./components/PreviewModal.vue";
+import { routes } from "./router";
+import { useTaskStore } from "./stores/task";
 
-const targetFile = ref(null);
-const refFiles = ref([]);
-const mode = ref("bert");
-const bertProfile = ref("balanced");
-const bgeStrategy = ref("coarse_then_fine");
-const bodyMode = ref(true);
-const defaultCoarseConfig = ref(cloneCoarseConfig(coarseConfigDefaults));
-const coarseConfig = ref(cloneCoarseConfig(coarseConfigDefaults));
-const loading = ref(false);
-const pollStatusMessage = ref("等待任务调度");
-const notice = ref("");
-const results = ref(null);
-const resultSummary = ref(null);
-const costTime = ref(0);
-const windowEstimate = ref(null);
-const windowEstimateLoading = ref(false);
-const windowEstimateError = ref("");
+const task = useTaskStore();
+const route = useRoute();
 
-const previewVisible = ref(false);
-const previewTitle = ref("");
-const previewContent = ref("");
-const previewLoading = ref(false);
+const navItems = routes
+  .filter((item) => item.name)
+  .map((item) => ({
+    name: item.name,
+    path: item.path,
+    step: item.meta.step,
+    label: item.meta.label
+  }));
 
-let pollTimer = null;
-let estimateTimer = null;
-let estimateRequestSeq = 0;
-
-const stopPolling = () => {
-  if (pollTimer) {
-    clearInterval(pollTimer);
-    pollTimer = null;
+const sessionStats = computed(() => [
+  {
+    label: "目标文档",
+    value: task.targetFile ? "1" : "0",
+    icon: FileText
+  },
+  {
+    label: "参考文档",
+    value: String(task.refFiles.length),
+    icon: FileStack
+  },
+  {
+    label: "检测模式",
+    value: task.mode === "bert" ? "BGE" : "传统",
+    icon: Gauge
+  },
+  {
+    label: "任务状态",
+    value: task.loading ? "运行中" : task.hasResults ? "已完成" : "待提交",
+    icon: Activity
   }
-};
+]);
 
-const stopEstimateTimer = () => {
-  if (estimateTimer) {
-    clearTimeout(estimateTimer);
-    estimateTimer = null;
-  }
-};
-
-const setNotice = (message) => {
-  notice.value = message;
-  if (message) {
-    setTimeout(() => {
-      if (notice.value === message) {
-        notice.value = "";
-      }
-    }, 4000);
-  }
-};
-
-const onTargetSelected = (file) => {
-  targetFile.value = file;
-};
-
-const onRefsSelected = (files) => {
-  refFiles.value = files;
-};
-
-const clearTarget = () => {
-  targetFile.value = null;
-};
-
-const removeRef = (index) => {
-  refFiles.value.splice(index, 1);
-};
-
-const fileSignature = (file) =>
-  file ? `${file.name}:${file.size}:${file.lastModified}` : "";
-
-const refFilesSignature = () => refFiles.value.map(fileSignature).join("|");
-
-const canEstimateWindows = () =>
-  mode.value === "bert" &&
-  Boolean(targetFile.value) &&
-  refFiles.value.length > 0 &&
-  !loading.value;
-
-const estimateBgeWindowCost = async () => {
-  stopEstimateTimer();
-
-  if (!canEstimateWindows()) {
-    windowEstimate.value = null;
-    windowEstimateError.value = "";
-    windowEstimateLoading.value = false;
-    return;
-  }
-
-  const requestSeq = ++estimateRequestSeq;
-  windowEstimateLoading.value = true;
-  windowEstimateError.value = "";
-
-  const formData = new FormData();
-  formData.append("target_file", targetFile.value);
-  refFiles.value.forEach((file) => formData.append("reference_files", file));
-  formData.append("body_mode", bodyMode.value);
-
-  try {
-    const { data } = await api.post("/api/bge_window_estimate", formData, {
-      headers: {
-        "Content-Type": "multipart/form-data"
-      }
-    });
-
-    if (requestSeq !== estimateRequestSeq) {
-      return;
-    }
-
-    if (data.status !== "success") {
-      throw new Error(data.message || "窗口规模估算失败");
-    }
-
-    windowEstimate.value = data;
-  } catch (error) {
-    if (requestSeq !== estimateRequestSeq) {
-      return;
-    }
-    windowEstimate.value = null;
-    windowEstimateError.value =
-      error.response?.data?.detail ||
-      error.message ||
-      "窗口规模估算失败，请稍后重试。";
-  } finally {
-    if (requestSeq === estimateRequestSeq) {
-      windowEstimateLoading.value = false;
-    }
-  }
-};
-
-const scheduleWindowEstimate = () => {
-  stopEstimateTimer();
-  estimateRequestSeq += 1;
-  windowEstimate.value = null;
-  windowEstimateError.value = "";
-
-  if (!canEstimateWindows()) {
-    windowEstimateLoading.value = false;
-    return;
-  }
-
-  windowEstimateLoading.value = true;
-  estimateTimer = setTimeout(() => {
-    estimateBgeWindowCost();
-  }, 700);
-};
-
-const resetCoarseConfig = () => {
-  coarseConfig.value = cloneCoarseConfig(defaultCoarseConfig.value);
-};
-
-const hydrateCoarseConfigDefaults = async () => {
-  try {
-    const { data } = await api.get("/api/coarse_config_defaults");
-    if (data.status === "success" && data.defaults) {
-      const hydratedDefaults = sanitizeCoarseConfig(data.defaults);
-      defaultCoarseConfig.value = hydratedDefaults;
-      coarseConfig.value = cloneCoarseConfig(hydratedDefaults);
-    }
-  } catch (error) {
-    console.warn("Failed to load coarse retrieval defaults.", error);
-  }
-};
-
-const closePreview = () => {
-  previewVisible.value = false;
-  previewTitle.value = "";
-  previewContent.value = "";
-  previewLoading.value = false;
-};
-
-const previewFile = async (file) => {
-  if (!file) {
-    return;
-  }
-
-  previewVisible.value = true;
-  previewTitle.value = file.name;
-  previewContent.value = "";
-  previewLoading.value = true;
-
-  const formData = new FormData();
-  formData.append("file", file);
-
-  try {
-    const { data } = await api.post("/api/preview_document", formData, {
-      headers: {
-        "Content-Type": "multipart/form-data"
-      }
-    });
-
-    if (data.status === "success") {
-      previewContent.value = data.content || "文档内容为空。";
-    } else {
-      previewContent.value = `解析失败：${data.message || "未知错误"}`;
-    }
-  } catch (error) {
-    previewContent.value = "网络异常，无法预览文档，请确认后端服务是否正常运行。";
-    console.error(error);
-  } finally {
-    previewLoading.value = false;
-  }
-};
-
-const pollTask = async (taskId) => {
-  try {
-    const { data } = await api.get(`/api/task_status/${taskId}`);
-    if (data.status !== "success") {
-      throw new Error(data.message || "任务查询失败");
-    }
-
-    const taskStatus = data.task_status;
-    if (taskStatus === "processing") {
-      pollStatusMessage.value = "语义引擎正在分析";
-      return;
-    }
-
-    if (taskStatus === "pending") {
-      pollStatusMessage.value = "任务排队中";
-      return;
-    }
-
-    if (taskStatus === "completed") {
-      stopPolling();
-      loading.value = false;
-      if (Array.isArray(data.data)) {
-        results.value = data.data;
-        resultSummary.value = null;
-      } else {
-        results.value = data.data?.items || [];
-        resultSummary.value = data.data?.summary || null;
-      }
-      costTime.value = data.cost_time || 0;
-      setNotice("检测完成，结果已更新。");
-      return;
-    }
-
-    if (taskStatus === "failed") {
-      stopPolling();
-      loading.value = false;
-      costTime.value = data.cost_time || 0;
-      setNotice(`任务失败：${data.message || "未知错误"}`);
-    }
-  } catch (error) {
-    stopPolling();
-    loading.value = false;
-    setNotice("任务轮询失败，请稍后重试。");
-    console.error(error);
-  }
-};
-
-const submitCheck = async () => {
-  if (!targetFile.value) {
-    setNotice("请先上传待检测文档。");
-    return;
-  }
-
-  if (!refFiles.value.length) {
-    setNotice("请至少上传一份参考文档。");
-    return;
-  }
-
-  stopPolling();
-  loading.value = true;
-  results.value = null;
-  resultSummary.value = null;
-  costTime.value = 0;
-  pollStatusMessage.value = "任务提交中";
-
-  const formData = new FormData();
-  formData.append("target_file", targetFile.value);
-  refFiles.value.forEach((file) => formData.append("reference_files", file));
-  formData.append("mode", mode.value);
-  formData.append("bert_profile", bertProfile.value);
-  formData.append("body_mode", bodyMode.value);
-  if (mode.value === "bert") {
-    formData.append("bge_strategy", bgeStrategy.value);
-    if (bgeStrategy.value === "coarse_then_fine") {
-      formData.append(
-        "coarse_config",
-        JSON.stringify(sanitizeCoarseConfig(coarseConfig.value))
-      );
-    }
-  }
-
-  try {
-    const { data } = await api.post("/api/submit_task", formData, {
-      headers: {
-        "Content-Type": "multipart/form-data"
-      }
-    });
-
-    if (data.status !== "success") {
-      throw new Error(data.message || "任务提交失败");
-    }
-
-    const taskId = data.task_id;
-    pollStatusMessage.value = data.message || "任务已提交，等待调度。";
-    pollTimer = setInterval(() => {
-      pollTask(taskId);
-    }, 2000);
-  } catch (error) {
-    loading.value = false;
-    setNotice(`提交失败：${error.message || "后端服务不可用"}`);
-    console.error(error);
-  }
-};
-
-onMounted(() => {
-  hydrateCoarseConfigDefaults();
-});
-
-watch(
-  () => [
-    mode.value,
-    bodyMode.value,
-    fileSignature(targetFile.value),
-    refFilesSignature()
-  ],
-  scheduleWindowEstimate
+const activeRouteLabel = computed(
+  () => navItems.find((item) => item.name === route.name)?.label || "工作台"
 );
 
-onBeforeUnmount(() => {
-  stopPolling();
-  stopEstimateTimer();
+onMounted(() => {
+  task.hydrateCoarseConfigDefaults();
 });
 </script>
 
 <template>
-  <main class="app-shell">
-    <HeroBanner
-      :target-file="targetFile"
-      :ref-files="refFiles"
-      :results="results"
-      :result-summary="resultSummary"
-      :mode="mode"
-      :loading="loading"
-      :bert-profile="bertProfile"
-    />
+  <main class="workflow-shell">
+    <aside class="workflow-sidebar">
+      <RouterLink class="brand-mark" to="/upload">
+        <LayoutDashboard :size="24" />
+        <span>
+          <strong>DocSimilaritySys</strong>
+          <small>文档查重分析台</small>
+        </span>
+      </RouterLink>
 
-    <section class="workspace-stage">
-      <div class="workspace-stage__intro">
-        <div class="workspace-stage__copy">
-          <p class="badge-kicker">Semantic Workbench</p>
-          <h2 class="stage-title">把上传、检测、复核放进同一块扫描工作台</h2>
-          <p class="text-note">
-            左侧处理文档与检测参数，右侧集中查看排序结果、风险指标和命中片段，不再把信息切成零散小卡片。
-          </p>
+      <nav class="workflow-nav" aria-label="检测流程">
+        <RouterLink
+          v-for="item in navItems"
+          :key="item.name"
+          class="workflow-nav__item"
+          :class="{ 'workflow-nav__item--active': route.name === item.name }"
+          :to="item.path"
+        >
+          <span>{{ item.step }}</span>
+          <strong>{{ item.label }}</strong>
+        </RouterLink>
+      </nav>
+
+      <section class="sidebar-status">
+        <Database :size="18" />
+        <div>
+          <span>当前任务</span>
+          <strong>{{ task.taskId || "尚未提交" }}</strong>
         </div>
-
-        <div class="stage-strip">
-          <span class="stage-pill">多格式文档输入</span>
-          <span class="stage-pill">异步队列检测</span>
-          <span class="stage-pill">片段级复核</span>
-        </div>
-      </div>
-
-      <section class="workspace-layout">
-        <ControlPanel
-          class="workspace-control"
-          v-model:mode="mode"
-          v-model:bertProfile="bertProfile"
-          v-model:bgeStrategy="bgeStrategy"
-          v-model:bodyMode="bodyMode"
-          v-model:coarseConfig="coarseConfig"
-          :default-coarse-config="defaultCoarseConfig"
-          :window-estimate="windowEstimate"
-          :window-estimate-loading="windowEstimateLoading"
-          :window-estimate-error="windowEstimateError"
-          :target-file="targetFile"
-          :ref-files="refFiles"
-          :loading="loading"
-          :poll-status-message="pollStatusMessage"
-          :notice="notice"
-          @reset-coarse-config="resetCoarseConfig"
-          @estimate-bge-cost="estimateBgeWindowCost"
-          @target-selected="onTargetSelected"
-          @refs-selected="onRefsSelected"
-          @clear-target="clearTarget"
-          @remove-ref="removeRef"
-          @preview-file="previewFile"
-          @submit="submitCheck"
-        />
-
-        <ResultsPanel
-          :results="results"
-          :result-summary="resultSummary"
-          :mode="mode"
-          :cost-time="costTime"
-          :loading="loading"
-          :poll-status-message="pollStatusMessage"
-        />
       </section>
-    </section>
+    </aside>
 
-    <section class="operating-strip">
-      <article class="operating-note">
-        <p class="operating-note__eyebrow">Dual Engines</p>
-        <h3>深度语义与传统规则同步可用</h3>
-        <p>需要查洗稿时切到 BGE，需要快速初筛时使用 TF-IDF + LSA。</p>
-      </article>
+    <section class="workflow-main">
+      <header class="workflow-topbar">
+        <div>
+          <p>当前视图</p>
+          <h2>{{ activeRouteLabel }}</h2>
+        </div>
 
-      <article class="operating-note">
-        <p class="operating-note__eyebrow">Review Ready</p>
-        <h3>结果不是一个分数，而是一条复核链</h3>
-        <p>从排序、覆盖率、置信度到命中片段，都可以在同一屏完成判断。</p>
-      </article>
+        <div class="session-strip">
+          <article v-for="stat in sessionStats" :key="stat.label" class="session-stat">
+            <component :is="stat.icon" :size="17" />
+            <span>{{ stat.label }}</span>
+            <strong>{{ stat.value }}</strong>
+          </article>
+        </div>
+      </header>
 
-      <article class="operating-note">
-        <p class="operating-note__eyebrow">Queue Driven</p>
-        <h3>长文本检测也保持稳定节奏</h3>
-        <p>前端实时感知任务状态，避免把等待过程做成无反馈的白屏。</p>
-      </article>
+      <p v-if="task.notice" class="toast-notice">{{ task.notice }}</p>
+
+      <RouterView v-slot="{ Component }">
+        <Transition name="page-fade" mode="out-in">
+          <component :is="Component" />
+        </Transition>
+      </RouterView>
     </section>
 
     <PreviewModal
-      :visible="previewVisible"
-      :title="previewTitle"
-      :content="previewContent"
-      :loading="previewLoading"
-      @close="closePreview"
+      :visible="task.previewVisible"
+      :title="task.previewTitle"
+      :content="task.previewContent"
+      :loading="task.previewLoading"
+      @close="task.closePreview"
     />
   </main>
 </template>
