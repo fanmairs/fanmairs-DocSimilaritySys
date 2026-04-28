@@ -15,6 +15,8 @@ from ..runtime import ApiRuntime
 
 
 VALID_BERT_PROFILES = {"strict", "balanced", "recall"}
+MIN_LSA_COMPONENTS = 1
+MAX_LSA_COMPONENTS = 12
 
 router = APIRouter(prefix="/api", tags=["tasks"])
 
@@ -22,6 +24,14 @@ router = APIRouter(prefix="/api", tags=["tasks"])
 def _normalize_bert_profile(value: str | None) -> str:
     normalized = (value or "balanced").strip().lower()
     return normalized if normalized in VALID_BERT_PROFILES else "balanced"
+
+
+def _normalize_lsa_components(value: int | str | None) -> int:
+    try:
+        components = int(value)
+    except (TypeError, ValueError):
+        components = 3
+    return max(MIN_LSA_COMPONENTS, min(components, MAX_LSA_COMPONENTS))
 
 
 @router.post("/submit_task")
@@ -32,6 +42,7 @@ async def submit_task(
     body_mode: bool = Form(False),
     bert_profile: str = Form("balanced"),
     bge_strategy: str = Form(BGE_STRATEGY_COARSE),
+    lsa_components: int = Form(3),
     coarse_config: str = Form(""),
     runtime: ApiRuntime = Depends(get_runtime),
 ):
@@ -49,6 +60,7 @@ async def submit_task(
         body_mode=body_mode,
         bert_profile=_normalize_bert_profile(bert_profile),
         bge_strategy=safe_bge_strategy,
+        lsa_components=_normalize_lsa_components(lsa_components),
         coarse_config=safe_coarse_config,
     )
 

@@ -12,6 +12,14 @@ from evidence import GlobalEvidenceAggregator
 from reports import build_report_payload, build_traditional_result, sort_report_items
 
 
+def _normalize_lsa_components(value: object, default: int = 3) -> int:
+    try:
+        components = int(value)
+    except (TypeError, ValueError):
+        components = default
+    return max(1, min(components, 12))
+
+
 class TaskRunner:
     """Owns heavyweight engines and computes one queued task at a time."""
 
@@ -93,6 +101,7 @@ class TaskRunner:
             target_path=target_path,
             ref_paths=ref_paths,
             body_mode=body_mode,
+            lsa_components=_normalize_lsa_components(task.get("lsa_components", 3)),
         )
 
     def _load_reference_payloads(
@@ -261,7 +270,9 @@ class TaskRunner:
         target_path: str,
         ref_paths: Sequence[str],
         body_mode: bool,
+        lsa_components: int,
     ) -> Dict[str, object]:
+        self.traditional_system.lsa.n_components = lsa_components
         raw_results = self.traditional_system.check_similarity(
             target_path,
             list(ref_paths),

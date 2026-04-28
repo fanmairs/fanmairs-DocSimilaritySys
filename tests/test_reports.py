@@ -93,6 +93,16 @@ class ReportItemTests(unittest.TestCase):
                 "sim_soft": 0.09,
                 "sim_hybrid": 0.24,
                 "risk_score": 0.31,
+                "traditional_lsa_components": 5,
+                "traditional_lsa_components_effective": 4,
+                "traditional_semantic_enabled": True,
+                "traditional_semantic_mode": "vector",
+                "traditional_semantic_vocab_size": 120,
+                "traditional_semantic_vector_hits": 36,
+                "traditional_semantic_vector_coverage": 0.30,
+                "traditional_semantic_synonym_count": 18,
+                "traditional_semantic_embeddings_configured": True,
+                "traditional_semantic_embeddings_found": True,
                 "plagiarized_parts": [{"target_part": "x"}],
             }
         )
@@ -100,6 +110,12 @@ class ReportItemTests(unittest.TestCase):
         self.assertEqual(result["file"], "doc.txt")
         self.assertEqual(result["engine"], "traditional")
         self.assertEqual(result["risk_score"], 0.31)
+        self.assertEqual(result["traditional_lsa_components"], 5)
+        self.assertEqual(result["traditional_lsa_components_effective"], 4)
+        self.assertTrue(result["traditional_semantic_enabled"])
+        self.assertEqual(result["traditional_semantic_mode"], "vector")
+        self.assertEqual(result["traditional_semantic_vector_hits"], 36)
+        self.assertAlmostEqual(result["traditional_semantic_vector_coverage"], 0.30)
         self.assertEqual(len(result["plagiarized_parts"]), 1)
 
     def test_sort_report_items_and_payload_are_stable(self):

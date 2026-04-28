@@ -995,6 +995,35 @@ body::after {
     color: #4d233b;
   }
 
+  .method-explainer {
+    @apply mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3;
+  }
+
+  .method-card {
+    @apply rounded-[1.2rem] border bg-white px-4 py-4 shadow-[0_18px_42px_-34px_rgba(47,111,94,0.55)];
+    border-color: rgba(203, 213, 225, 0.9);
+  }
+
+  .method-card span {
+    @apply block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500;
+  }
+
+  .method-card strong {
+    @apply mt-2 block text-lg font-extrabold text-ink-900;
+  }
+
+  .method-card p {
+    @apply mt-2 text-xs leading-6 text-slate-600;
+  }
+
+  .method-card--good {
+    @apply border-emerald-200 bg-emerald-50;
+  }
+
+  .method-card--warn {
+    @apply border-amber-200 bg-amber-50;
+  }
+
   .result-stream {
     @apply mt-5 divide-y divide-slate-200;
   }
@@ -1547,6 +1576,26 @@ body::after {
 
   .number-field input {
     @apply h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200;
+  }
+
+  .lsa-custom-panel {
+    @apply mt-4 grid gap-3 rounded-lg border border-emerald-100 bg-emerald-50/60 p-4;
+  }
+
+  .lsa-number-field {
+    @apply max-w-64;
+  }
+
+  .range-field {
+    @apply h-2 w-full cursor-pointer accent-emerald-700;
+  }
+
+  .lsa-custom-panel p {
+    @apply text-sm leading-6 text-slate-700;
+  }
+
+  .lsa-preset-strip {
+    @apply mt-3;
   }
 
   .config-inspector {

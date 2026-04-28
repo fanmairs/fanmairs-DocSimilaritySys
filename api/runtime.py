@@ -29,6 +29,7 @@ class QueuedTask:
     body_mode: bool
     bert_profile: str
     bge_strategy: str
+    lsa_components: int
     coarse_config: Optional[Dict[str, object]]
     session_dir: str
 
@@ -80,6 +81,7 @@ class ApiRuntime:
         body_mode: bool,
         bert_profile: str,
         bge_strategy: str,
+        lsa_components: int,
         coarse_config: Optional[Dict[str, object]],
     ) -> Dict[str, object]:
         task_id = str(uuid.uuid4())
@@ -102,6 +104,7 @@ class ApiRuntime:
                 body_mode=body_mode,
                 bert_profile=bert_profile,
                 bge_strategy=bge_strategy,
+                lsa_components=lsa_components,
                 coarse_config=coarse_config,
                 session_dir=session_dir,
             )

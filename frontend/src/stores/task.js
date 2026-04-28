@@ -14,6 +14,7 @@ export const useTaskStore = defineStore("task", () => {
   const bertProfile = ref("balanced");
   const bgeStrategy = ref("coarse_then_fine");
   const bodyMode = ref(true);
+  const traditionalLsaComponents = ref(3);
   const defaultCoarseConfig = ref(cloneCoarseConfig(coarseConfigDefaults));
   const coarseConfig = ref(cloneCoarseConfig(coarseConfigDefaults));
 
@@ -184,6 +185,14 @@ export const useTaskStore = defineStore("task", () => {
     markInputsChanged();
   };
 
+  const setTraditionalLsaComponents = (value) => {
+    const parsed = Number.parseInt(value, 10);
+    traditionalLsaComponents.value = Number.isFinite(parsed)
+      ? Math.min(12, Math.max(1, parsed))
+      : 3;
+    markInputsChanged();
+  };
+
   const applyCoarseConfig = (value) => {
     coarseConfig.value = sanitizeCoarseConfig(value);
     markInputsChanged();
@@ -289,6 +298,8 @@ export const useTaskStore = defineStore("task", () => {
       if (bgeStrategy.value === "coarse_then_fine") {
         formData.append("coarse_config", JSON.stringify(sanitizeCoarseConfig(coarseConfig.value)));
       }
+    } else {
+      formData.append("lsa_components", traditionalLsaComponents.value);
     }
 
     try {
@@ -367,6 +378,7 @@ export const useTaskStore = defineStore("task", () => {
     bertProfile,
     bgeStrategy,
     bodyMode,
+    traditionalLsaComponents,
     defaultCoarseConfig,
     coarseConfig,
     loading,
@@ -399,6 +411,7 @@ export const useTaskStore = defineStore("task", () => {
     setBertProfile,
     setBgeStrategy,
     setBodyMode,
+    setTraditionalLsaComponents,
     setMode,
     setNotice,
     setReferenceFiles,

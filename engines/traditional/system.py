@@ -46,13 +46,6 @@ class PlagiarismDetectorSystem:
             semantic_weight=min(0.35, self.semantic_weight)
         ) # 引入段落级检测器
 
-        # 内置一个极简的背景语料库，用于辅助 LSA 理解同义词关联
-        self.background_corpus = [
-            "互联网和网络科技推动了数字化时代的发展，产生了大量电子文档。",
-            "知识产权与版权保护在科研领域和学术界都至关重要。",
-            "爆炸式增长的数量和指数级上升的数目，都带来了严峻的挑战与困难。"
-        ]
-
     def _fuse_similarity_scores(
         self,
         sim_lsa,
@@ -73,6 +66,32 @@ class PlagiarismDetectorSystem:
     @staticmethod
     def _calculate_risk_score(sim_hybrid, sim_lsa, sim_tfidf, sim_soft):
         return calculate_risk_score(sim_hybrid, sim_lsa, sim_tfidf, sim_soft)
+
+    def _semantic_resource_status(self):
+        embeddings_path = self.semantic_scorer.embeddings_path
+        embeddings_found = bool(embeddings_path and os.path.isfile(embeddings_path))
+        synonym_count = len(getattr(self.semantic_scorer, "synonym_to_base", {}) or {})
+        vector_coverage = float(getattr(self.semantic_scorer, "last_vector_coverage", 0.0) or 0.0)
+        vector_hits = int(getattr(self.semantic_scorer, "last_vector_hits", 0) or 0)
+        vocab_size = int(getattr(self.semantic_scorer, "last_vocab_size", 0) or 0)
+
+        if embeddings_found:
+            mode = "vector"
+        elif synonym_count > 0:
+            mode = "synonym"
+        else:
+            mode = "disabled"
+
+        return {
+            "traditional_semantic_enabled": mode != "disabled",
+            "traditional_semantic_mode": mode,
+            "traditional_semantic_vocab_size": vocab_size,
+            "traditional_semantic_vector_hits": vector_hits,
+            "traditional_semantic_vector_coverage": vector_coverage,
+            "traditional_semantic_synonym_count": synonym_count,
+            "traditional_semantic_embeddings_configured": bool(embeddings_path),
+            "traditional_semantic_embeddings_found": embeddings_found,
+        }
 
     def clean_academic_noise(self, text):
         return clean_academic_noise_text(text)
@@ -121,9 +140,9 @@ class PlagiarismDetectorSystem:
             print("❌ 没有有效的参考文档，无法进行查重。")
             return []
 
-        # 3. 构建全量语料库 (目标 + 参考 + 背景)
-        # 索引说明: 0=目标文档, 1~N=参考文档, N+1~M=背景文档
-        all_texts = [target_text] + ref_texts + self.background_corpus
+        # 3. 构建检测语料库 (目标 + 用户上传的参考文档)
+        # 索引说明: 0=目标文档, 1~N=参考文档
+        all_texts = [target_text] + ref_texts
 
         # 4. 文本预处理 (清洗+分词)
         print("[2/5] 启动 NLP 预处理与分词引擎...")
@@ -133,19 +152,24 @@ class PlagiarismDetectorSystem:
         print("[3/5] 构建高维稀疏特征矩阵 (TF-IDF)...")
         tfidf_matrix = self.vectorizer.fit_transform(all_words)
         self.semantic_scorer.prepare_vocab(self.vectorizer.vocab_list)
+        semantic_resource_status = self._semantic_resource_status()
         if self.semantic_scorer.last_vocab_size >= 80 and self.semantic_scorer.last_vector_coverage < 0.03:
             print("⚠️ 语义向量覆盖率过低，可能存在词向量语言不匹配或文件错误。")
 
         # 6. 施展降维打击 (LSA / SVD)
         # 注意：如果文档总数少于 n_components，SVD 会报错或自动调整，这里简单处理
         n_docs = len(all_texts)
-        effective_n_components = min(self.lsa.n_components, n_docs)
-        if effective_n_components != self.lsa.n_components:
+        requested_lsa_components = max(1, int(getattr(self.lsa, "n_components", 3) or 3))
+        effective_n_components = max(1, min(requested_lsa_components, n_docs))
+        if effective_n_components != requested_lsa_components:
             print(f"⚠️ 文档数量较少，自动调整 LSA 维度为 {effective_n_components}")
-            self.lsa.n_components = effective_n_components
             
         print("[4/5] 执行 SVD 矩阵分解，映射至潜在语义空间...")
-        lsa_matrix = self.lsa.fit_transform(tfidf_matrix)
+        task_lsa = WhiteBoxLSA(n_components=effective_n_components)
+        lsa_matrix = task_lsa.fit_transform(tfidf_matrix)
+        actual_lsa_components = int(
+            getattr(task_lsa, "effective_components", effective_n_components)
+        )
 
         # 7. 批量计算相似度
         print("[5/5] 计算空间向量余弦夹角...")
@@ -185,7 +209,10 @@ class PlagiarismDetectorSystem:
                 'sim_lsa': sim_lsa,
                 'sim_soft': sim_soft,
                 'sim_hybrid': sim_hybrid,
-                'risk_score': risk_score
+                'risk_score': risk_score,
+                'traditional_lsa_components': requested_lsa_components,
+                'traditional_lsa_components_effective': actual_lsa_components,
+                **semantic_resource_status,
             })
 
         end_time = time.time()

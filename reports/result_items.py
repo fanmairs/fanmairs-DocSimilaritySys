@@ -163,6 +163,7 @@ def build_traditional_result(raw_result: Mapping[str, object]) -> Dict[str, obje
     sim_lsa = _safe_float(raw_result.get("sim_lsa", 0.0))
     sim_hybrid = _safe_float(raw_result.get("sim_hybrid", sim_lsa))
     risk_score = _safe_float(raw_result.get("risk_score", sim_hybrid))
+    semantic_mode = str(raw_result.get("traditional_semantic_mode", "unknown") or "unknown")
 
     return {
         "file": _display_name(raw_result.get("file", "unknown")),
@@ -172,6 +173,32 @@ def build_traditional_result(raw_result: Mapping[str, object]) -> Dict[str, obje
         "sim_soft": _safe_float(raw_result.get("sim_soft", 0.0)),
         "sim_hybrid": sim_hybrid,
         "risk_score": risk_score,
+        "traditional_lsa_components": _safe_int(
+            raw_result.get("traditional_lsa_components", 3)
+        ),
+        "traditional_lsa_components_effective": _safe_int(
+            raw_result.get("traditional_lsa_components_effective", 3)
+        ),
+        "traditional_semantic_enabled": bool(raw_result.get("traditional_semantic_enabled", False)),
+        "traditional_semantic_mode": semantic_mode,
+        "traditional_semantic_vocab_size": _safe_int(
+            raw_result.get("traditional_semantic_vocab_size", 0)
+        ),
+        "traditional_semantic_vector_hits": _safe_int(
+            raw_result.get("traditional_semantic_vector_hits", 0)
+        ),
+        "traditional_semantic_vector_coverage": _safe_float(
+            raw_result.get("traditional_semantic_vector_coverage", 0.0)
+        ),
+        "traditional_semantic_synonym_count": _safe_int(
+            raw_result.get("traditional_semantic_synonym_count", 0)
+        ),
+        "traditional_semantic_embeddings_configured": bool(
+            raw_result.get("traditional_semantic_embeddings_configured", False)
+        ),
+        "traditional_semantic_embeddings_found": bool(
+            raw_result.get("traditional_semantic_embeddings_found", False)
+        ),
         "plagiarized_parts": list(raw_result.get("plagiarized_parts", []) or []),
     }
 

@@ -10,6 +10,7 @@ class WhiteBoxLSA:
         self.U = None
         self.S = None
         self.Vt = None
+        self.effective_components = n_components
 
     def fit_transform(self, tfidf_matrix):
         """
@@ -43,6 +44,7 @@ class WhiteBoxLSA:
         # 解决办法：严格按照用户设定的 k 值（通常为 5-10）进行截断，强行把高频特征挤压到低维空间，滤除噪声。
         if k < 1:
             k = 1
+        self.effective_components = int(k)
 
         U_k = U[:, :k]  # 文档在潜在语义空间的分布
         S_k = np.diag(S[:k])  # 奇异值对角矩阵（代表每个语义维度的重要性）

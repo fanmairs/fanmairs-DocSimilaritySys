@@ -111,6 +111,117 @@ const summaryText = computed(() => {
 
 const formatScore = (value) => `${((value || 0) * 100).toFixed(2)}%`;
 
+const formatInteger = (value) => Number(value || 0).toLocaleString("zh-CN");
+
+const traditionalSemanticStatus = computed(() => {
+  if (props.mode !== "traditional" || !topResult.value) {
+    return null;
+  }
+
+  const mode = topResult.value.traditional_semantic_mode || "unknown";
+  const enabled = Boolean(topResult.value.traditional_semantic_enabled);
+  const vectorCoverage = Number(topResult.value.traditional_semantic_vector_coverage || 0);
+  const vectorHits = Number(topResult.value.traditional_semantic_vector_hits || 0);
+  const vocabSize = Number(topResult.value.traditional_semantic_vocab_size || 0);
+  const synonymCount = Number(topResult.value.traditional_semantic_synonym_count || 0);
+  const embeddingsConfigured = Boolean(topResult.value.traditional_semantic_embeddings_configured);
+  const embeddingsFound = Boolean(topResult.value.traditional_semantic_embeddings_found);
+
+  if (mode === "vector") {
+    return {
+      label: vectorCoverage >= 0.03 ? "词向量已生效" : "词向量覆盖较低",
+      value: `${formatScore(vectorCoverage)} 覆盖`,
+      tone: vectorCoverage >= 0.03 ? "good" : "warn",
+      description: `当前语料词表 ${formatInteger(vocabSize)} 个词，词向量命中 ${formatInteger(vectorHits)} 个；Soft 分会参与同义替换和近义表达补偿。`
+    };
+  }
+
+  if (mode === "synonym") {
+    return {
+      label: "同义词增强已生效",
+      value: `${formatInteger(synonymCount)} 条映射`,
+      tone: "good",
+      description: "未使用词向量文件，但同义词表可用；Soft 分主要通过同义词归一化补偿改写表达。"
+    };
+  }
+
+  if (!enabled && embeddingsConfigured && !embeddingsFound) {
+    return {
+      label: "词向量文件未找到",
+      value: "软语义未启用",
+      tone: "warn",
+      description: "系统配置了词向量路径，但本地文件不存在；当前传统模式主要依赖 TF-IDF 与 LSA。"
+    };
+  }
+
+  return {
+    label: "软语义未启用",
+    value: "仅数学基线",
+    tone: "neutral",
+    description: "当前没有可用词向量或同义词表；传统模式仍会使用 TF-IDF、LSA 和窗口片段检测。"
+  };
+});
+
+const traditionalMethodCards = computed(() => {
+  if (props.mode !== "traditional") {
+    return [];
+  }
+
+  const requestedLsaComponents = Number(topResult.value?.traditional_lsa_components || 3);
+  const effectiveLsaComponents = Number(
+    topResult.value?.traditional_lsa_components_effective || requestedLsaComponents
+  );
+  const lsaComponentText =
+    requestedLsaComponents === effectiveLsaComponents
+      ? `${effectiveLsaComponents}D`
+      : `${effectiveLsaComponents}/${requestedLsaComponents}D`;
+
+  return [
+    {
+      label: "TF-IDF",
+      value: formatScore(topResult.value?.sim_tfidf ?? 0),
+      tone: "neutral",
+      description: "衡量关键词和专业词的字面重合，适合发现直接复制、术语复用和局部照搬。"
+    },
+    {
+      label: "LSA",
+      value: formatScore(topResult.value?.sim_lsa ?? 0),
+      tone: "neutral",
+      description: "通过 SVD 把 TF-IDF 矩阵压缩到低维主题空间，捕捉同一主题下的潜在语义相似。"
+    },
+    {
+      label: "Soft",
+      value: formatScore(topResult.value?.sim_soft ?? 0),
+      tone: traditionalSemanticStatus.value?.tone === "warn" ? "warn" : "neutral",
+      description: "基于同义词表或词向量做软匹配：即使两个词没有完全相同，也会尝试判断它们是否属于近义表达。"
+    },
+    {
+      label: "LSA 维度",
+      value: lsaComponentText,
+      tone: "neutral",
+      description: "表示本次 SVD 压缩后保留的潜在主题数量；维度越高越细，维度越低越概括。"
+    },
+    {
+      label: "Hybrid",
+      value: formatScore(topResult.value?.sim_hybrid ?? 0),
+      tone: "neutral",
+      description: "融合 TF-IDF、LSA 与 Soft 软语义，避免只靠某一个指标误判。"
+    },
+    {
+      label: "风险分",
+      value: formatScore(topResult.value?.risk_score ?? 0),
+      tone: "warn",
+      description: "面向人工复核的最终排序信号，综合整体相似度和片段证据强度。"
+    },
+    {
+      label: "软语义资源",
+      value: traditionalSemanticStatus.value?.value || "未返回",
+      tone: traditionalSemanticStatus.value?.tone || "neutral",
+      description: traditionalSemanticStatus.value?.description || "等待后端返回词向量或同义词资源状态。"
+    }
+  ];
+});
+
 const isCoarseStrategyExhausted = computed(() => {
   if (!activeSummary.value || activeSummary.value.retrieval_strategy !== "coarse_then_fine") {
     return false;
@@ -212,6 +323,14 @@ const heroMetrics = computed(() => {
     {
       label: "TF-IDF",
       value: formatScore(topResult.value.sim_tfidf ?? 0)
+    },
+    {
+      label: "Soft",
+      value: formatScore(topResult.value.sim_soft ?? 0)
+    },
+    {
+      label: "软语义资源",
+      value: traditionalSemanticStatus.value?.value || "未返回"
     }
   ];
 });
@@ -243,7 +362,8 @@ const getRowMetrics = (item) => {
     { label: "风险", value: item.risk_score ?? item.sim_hybrid ?? 0 },
     { label: "Hybrid", value: item.sim_hybrid ?? item.sim_lsa ?? 0 },
     { label: "LSA", value: item.sim_lsa ?? 0 },
-    { label: "TF-IDF", value: item.sim_tfidf ?? 0 }
+    { label: "TF-IDF", value: item.sim_tfidf ?? 0 },
+    { label: "Soft", value: item.sim_soft ?? 0 }
   ];
 };
 
@@ -343,6 +463,19 @@ const getRowSummary = (item) => {
             <strong>{{ metric.value }}</strong>
           </article>
         </div>
+      </section>
+
+      <section v-if="props.mode === 'traditional'" class="method-explainer">
+        <article
+          v-for="card in traditionalMethodCards"
+          :key="card.label"
+          class="method-card"
+          :class="`method-card--${card.tone}`"
+        >
+          <span>{{ card.label }}</span>
+          <strong>{{ card.value }}</strong>
+          <p>{{ card.description }}</p>
+        </article>
       </section>
 
       <ol class="result-stream">

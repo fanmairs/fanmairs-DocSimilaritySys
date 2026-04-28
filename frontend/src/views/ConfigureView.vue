@@ -55,6 +55,15 @@ const strategyOptions = [
   }
 ];
 
+const lsaComponentOptions = [
+  { value: 1, label: "1" },
+  { value: 2, label: "2" },
+  { value: 3, label: "3 默认" },
+  { value: 5, label: "5" },
+  { value: 8, label: "8" },
+  { value: 12, label: "12" }
+];
+
 const activePreset = computed(() => detectCoarseConfigPreset(task.coarseConfig));
 
 const estimateMetrics = computed(() => {
@@ -136,6 +145,57 @@ const goUpload = () => {
               >
                 <strong>{{ option.label }}</strong>
                 <span>{{ option.description }}</span>
+              </button>
+            </div>
+          </article>
+
+          <article v-if="task.mode === 'traditional'" class="config-section">
+            <div class="section-titleline">
+              <SlidersHorizontal :size="20" />
+              <div>
+                <span>LSA 维度</span>
+                <h2>选择压缩后的潜在主题数</h2>
+              </div>
+            </div>
+
+            <div class="lsa-custom-panel">
+              <label class="number-field lsa-number-field">
+                <span>自定义压缩维度（1-12）</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="12"
+                  step="1"
+                  :value="task.traditionalLsaComponents"
+                  @input="task.setTraditionalLsaComponents($event.target.value)"
+                />
+              </label>
+
+              <input
+                class="range-field"
+                type="range"
+                min="1"
+                max="12"
+                step="1"
+                :value="task.traditionalLsaComponents"
+                @input="task.setTraditionalLsaComponents($event.target.value)"
+              />
+
+              <p>
+                当前提交值：{{ task.traditionalLsaComponents }} 维。维度越低越概括，维度越高越细；文档数量不足时，后端会自动降到可计算的实际维度。
+              </p>
+            </div>
+
+            <div class="preset-strip lsa-preset-strip">
+              <button
+                v-for="option in lsaComponentOptions"
+                :key="option.value"
+                class="preset-button"
+                :class="{ 'preset-button--active': task.traditionalLsaComponents === option.value }"
+                type="button"
+                @click="task.setTraditionalLsaComponents(option.value)"
+              >
+                {{ option.label }}
               </button>
             </div>
           </article>
