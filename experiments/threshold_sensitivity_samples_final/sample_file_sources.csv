@@ -1,0 +1,61 @@
+﻿file_path,case_id,role,paired_file,sample_type,label,source_document,domain,chars,sentences,notes
+samples/targets/C001_target.txt,C001,target,samples/references/C001_ref.txt,direct_copy,1,多特征融合的短文本语义相似度计算方法研究_张凝.pdf,text_similarity,1072,13,目标文本与参考文本使用同一来源片段，模拟直接复制。
+samples/references/C001_ref.txt,C001,reference,samples/targets/C001_target.txt,direct_copy,1,多特征融合的短文本语义相似度计算方法研究_张凝.pdf,text_similarity,1072,13,目标文本与参考文本使用同一来源片段，模拟直接复制。
+samples/targets/C002_target.txt,C002,target,samples/references/C002_ref.txt,direct_copy,1,基于Transformer的多尺度特征融合的小目标检测研究_王德玉.pdf,computer_vision,1013,15,目标文本与参考文本使用同一来源片段，模拟直接复制。
+samples/references/C002_ref.txt,C002,reference,samples/targets/C002_target.txt,direct_copy,1,基于Transformer的多尺度特征融合的小目标检测研究_王德玉.pdf,computer_vision,1013,15,目标文本与参考文本使用同一来源片段，模拟直接复制。
+samples/targets/C003_target.txt,C003,target,samples/references/C003_ref.txt,direct_copy,1,C县农产品物流园区选址及功能区布局规划研究_张明慧.pdf,agri_logistics,1182,14,目标文本与参考文本使用同一来源片段，模拟直接复制。
+samples/references/C003_ref.txt,C003,reference,samples/targets/C003_target.txt,direct_copy,1,C县农产品物流园区选址及功能区布局规划研究_张明慧.pdf,agri_logistics,1182,14,目标文本与参考文本使用同一来源片段，模拟直接复制。
+samples/targets/C004_target.txt,C004,target,samples/references/C004_ref.txt,direct_copy,1,个人数字遗产继承的法律保护研究_李苗苗.pdf,law,1111,20,目标文本与参考文本使用同一来源片段，模拟直接复制。
+samples/references/C004_ref.txt,C004,reference,samples/targets/C004_target.txt,direct_copy,1,个人数字遗产继承的法律保护研究_李苗苗.pdf,law,1111,20,目标文本与参考文本使用同一来源片段，模拟直接复制。
+samples/targets/C005_target.txt,C005,target,samples/references/C005_ref.txt,direct_copy,1,小学中段整本书阅读教学策略研究——以X小学为例_程凡芸.pdf,education,1028,14,目标文本与参考文本使用同一来源片段，模拟直接复制。
+samples/references/C005_ref.txt,C005,reference,samples/targets/C005_target.txt,direct_copy,1,小学中段整本书阅读教学策略研究——以X小学为例_程凡芸.pdf,education,1028,14,目标文本与参考文本使用同一来源片段，模拟直接复制。
+samples/targets/C006_target.txt,C006,target,samples/references/C006_ref.txt,direct_copy,1,ESG表现对企业避税的影响研究_常林.pdf,finance_management,1228,9,目标文本与参考文本使用同一来源片段，模拟直接复制。
+samples/references/C006_ref.txt,C006,reference,samples/targets/C006_target.txt,direct_copy,1,ESG表现对企业避税的影响研究_常林.pdf,finance_management,1228,9,目标文本与参考文本使用同一来源片段，模拟直接复制。
+samples/targets/C007_target.txt,C007,target,samples/references/C007_ref.txt,direct_copy,1,基于深度学习的CT图像肺部结节检测与分割研究_杜禹博.pdf,medical_material,934,14,目标文本与参考文本使用同一来源片段，模拟直接复制。
+samples/references/C007_ref.txt,C007,reference,samples/targets/C007_target.txt,direct_copy,1,基于深度学习的CT图像肺部结节检测与分割研究_杜禹博.pdf,medical_material,934,14,目标文本与参考文本使用同一来源片段，模拟直接复制。
+samples/targets/C008_target.txt,C008,target,samples/references/C008_ref.txt,direct_copy,1,基于聚乙烯醇水凝胶的功能化应用研究_耿敬天.pdf,medical_material,1023,17,目标文本与参考文本使用同一来源片段，模拟直接复制。
+samples/references/C008_ref.txt,C008,reference,samples/targets/C008_target.txt,direct_copy,1,基于聚乙烯醇水凝胶的功能化应用研究_耿敬天.pdf,medical_material,1023,17,目标文本与参考文本使用同一来源片段，模拟直接复制。
+samples/targets/C009_target.txt,C009,target,samples/references/C009_ref.txt,light_rewrite,1,深度学习框架下系统查重的研究与应用_雷子旺.pdf (rewritten),text_similarity,1070,18,目标文本由参考片段进行轻度换词、局部调序和连接词改写，模拟轻度改写。
+samples/references/C009_ref.txt,C009,reference,samples/targets/C009_target.txt,light_rewrite,1,深度学习框架下系统查重的研究与应用_雷子旺.pdf,text_similarity,1056,18,目标文本由参考片段进行轻度换词、局部调序和连接词改写，模拟轻度改写。
+samples/targets/C010_target.txt,C010,target,samples/references/C010_ref.txt,light_rewrite,1,基于TF-IDF和机器学习的文本向量化与分类研究_石慧.pdf (rewritten),text_similarity,1015,16,目标文本由参考片段进行轻度换词、局部调序和连接词改写，模拟轻度改写。
+samples/references/C010_ref.txt,C010,reference,samples/targets/C010_target.txt,light_rewrite,1,基于TF-IDF和机器学习的文本向量化与分类研究_石慧.pdf,text_similarity,992,16,目标文本由参考片段进行轻度换词、局部调序和连接词改写，模拟轻度改写。
+samples/targets/C011_target.txt,C011,target,samples/references/C011_ref.txt,light_rewrite,1,基于卷积神经网络的人脸表情识别与应用_王以诺.pdf (rewritten),computer_vision,992,8,目标文本由参考片段进行轻度换词、局部调序和连接词改写，模拟轻度改写。
+samples/references/C011_ref.txt,C011,reference,samples/targets/C011_target.txt,light_rewrite,1,基于卷积神经网络的人脸表情识别与应用_王以诺.pdf,computer_vision,984,8,目标文本由参考片段进行轻度换词、局部调序和连接词改写，模拟轻度改写。
+samples/targets/C012_target.txt,C012,target,samples/references/C012_ref.txt,light_rewrite,1,京津冀农产品物流需求预测与物流网络构建研究_薛晓博.pdf (rewritten),agri_logistics,917,10,目标文本由参考片段进行轻度换词、局部调序和连接词改写，模拟轻度改写。
+samples/references/C012_ref.txt,C012,reference,samples/targets/C012_target.txt,light_rewrite,1,京津冀农产品物流需求预测与物流网络构建研究_薛晓博.pdf,agri_logistics,909,10,目标文本由参考片段进行轻度换词、局部调序和连接词改写，模拟轻度改写。
+samples/targets/C013_target.txt,C013,target,samples/references/C013_ref.txt,light_rewrite,1,数字遗产继承问题研究_李欣.pdf (rewritten),law,1238,21,目标文本由参考片段进行轻度换词、局部调序和连接词改写，模拟轻度改写。
+samples/references/C013_ref.txt,C013,reference,samples/targets/C013_target.txt,light_rewrite,1,数字遗产继承问题研究_李欣.pdf,law,1221,21,目标文本由参考片段进行轻度换词、局部调序和连接词改写，模拟轻度改写。
+samples/targets/C014_target.txt,C014,target,samples/references/C014_ref.txt,light_rewrite,1,小学中段整本书阅读教学策略研究——以X小学为例_程凡芸.pdf (rewritten),education,968,12,目标文本由参考片段进行轻度换词、局部调序和连接词改写，模拟轻度改写。
+samples/references/C014_ref.txt,C014,reference,samples/targets/C014_target.txt,light_rewrite,1,小学中段整本书阅读教学策略研究——以X小学为例_程凡芸.pdf,education,953,12,目标文本由参考片段进行轻度换词、局部调序和连接词改写，模拟轻度改写。
+samples/targets/C015_target.txt,C015,target,samples/references/C015_ref.txt,light_rewrite,1,XH公司绿色债券发行动因与效应研究_吕嘉玮.pdf (rewritten),finance_management,985,15,目标文本由参考片段进行轻度换词、局部调序和连接词改写，模拟轻度改写。
+samples/references/C015_ref.txt,C015,reference,samples/targets/C015_target.txt,light_rewrite,1,XH公司绿色债券发行动因与效应研究_吕嘉玮.pdf,finance_management,970,15,目标文本由参考片段进行轻度换词、局部调序和连接词改写，模拟轻度改写。
+samples/targets/C016_target.txt,C016,target,samples/references/C016_ref.txt,light_rewrite,1,改性氧化锌催化剂制备及催化降解有机污染物的研究_何书桓.pdf (rewritten),medical_material,1243,18,目标文本由参考片段进行轻度换词、局部调序和连接词改写，模拟轻度改写。
+samples/references/C016_ref.txt,C016,reference,samples/targets/C016_target.txt,light_rewrite,1,改性氧化锌催化剂制备及催化降解有机污染物的研究_何书桓.pdf,medical_material,1225,18,目标文本由参考片段进行轻度换词、局部调序和连接词改写，模拟轻度改写。
+samples/targets/C017_target.txt,C017,target,samples/references/C017_ref.txt,same_topic_non_plagiarism,0,深度学习框架下系统查重的研究与应用_雷子旺.pdf,text_similarity,1032,20,同一或相近领域的不同文档片段，作为同主题但不应判相似的负样本。
+samples/references/C017_ref.txt,C017,reference,samples/targets/C017_target.txt,same_topic_non_plagiarism,0,多特征融合的短文本语义相似度计算方法研究_张凝.pdf,text_similarity,923,10,同一或相近领域的不同文档片段，作为同主题但不应判相似的负样本。
+samples/targets/C018_target.txt,C018,target,samples/references/C018_ref.txt,same_topic_non_plagiarism,0,基于TF-IDF和机器学习的文本向量化与分类研究_石慧.pdf,text_similarity,966,15,同一或相近领域的不同文档片段，作为同主题但不应判相似的负样本。
+samples/references/C018_ref.txt,C018,reference,samples/targets/C018_target.txt,same_topic_non_plagiarism,0,深度学习框架下系统查重的研究与应用_雷子旺.pdf,text_similarity,958,15,同一或相近领域的不同文档片段，作为同主题但不应判相似的负样本。
+samples/targets/C019_target.txt,C019,target,samples/references/C019_ref.txt,same_topic_non_plagiarism,0,基于Transformer的多尺度特征融合的小目标检测研究_王德玉.pdf,computer_vision,1128,9,同一或相近领域的不同文档片段，作为同主题但不应判相似的负样本。
+samples/references/C019_ref.txt,C019,reference,samples/targets/C019_target.txt,same_topic_non_plagiarism,0,基于卷积神经网络的人脸表情识别与应用_王以诺.pdf,computer_vision,996,8,同一或相近领域的不同文档片段，作为同主题但不应判相似的负样本。
+samples/targets/C020_target.txt,C020,target,samples/references/C020_ref.txt,same_topic_non_plagiarism,0,FCH公司生鲜农产品配送路径优化研究_徐小雨.pdf,agri_logistics,1037,18,同一或相近领域的不同文档片段，作为同主题但不应判相似的负样本。
+samples/references/C020_ref.txt,C020,reference,samples/targets/C020_target.txt,same_topic_non_plagiarism,0,双碳目标下生鲜农产品冷链配送路径优化研究_牛忍.pdf,agri_logistics,1049,15,同一或相近领域的不同文档片段，作为同主题但不应判相似的负样本。
+samples/targets/C021_target.txt,C021,target,samples/references/C021_ref.txt,same_topic_non_plagiarism,0,平台处罚的行政法规制_吴树贞.pdf,law,929,16,同一或相近领域的不同文档片段，作为同主题但不应判相似的负样本。
+samples/references/C021_ref.txt,C021,reference,samples/targets/C021_target.txt,same_topic_non_plagiarism,0,影评类短视频侵权纠纷中合理使用认定研究_连宇馨.pdf,law,1042,20,同一或相近领域的不同文档片段，作为同主题但不应判相似的负样本。
+samples/targets/C022_target.txt,C022,target,samples/references/C022_ref.txt,same_topic_non_plagiarism,0,小学中段整本书阅读教学策略研究——以X小学为例_程凡芸.pdf,education,962,11,同一或相近领域的不同文档片段，作为同主题但不应判相似的负样本。
+samples/references/C022_ref.txt,C022,reference,samples/targets/C022_target.txt,same_topic_non_plagiarism,0,中国传统文化绘本在小学语文阅读教学中的应用研究_龚婧.pdf,education,1009,16,同一或相近领域的不同文档片段，作为同主题但不应判相似的负样本。
+samples/targets/C023_target.txt,C023,target,samples/references/C023_ref.txt,same_topic_non_plagiarism,0,XH公司绿色债券发行动因与效应研究_吕嘉玮.pdf,finance_management,971,12,同一或相近领域的不同文档片段，作为同主题但不应判相似的负样本。
+samples/references/C023_ref.txt,C023,reference,samples/targets/C023_target.txt,same_topic_non_plagiarism,0,ESG表现对企业避税的影响研究_常林.pdf,finance_management,1157,11,同一或相近领域的不同文档片段，作为同主题但不应判相似的负样本。
+samples/targets/C024_target.txt,C024,target,samples/references/C024_ref.txt,same_topic_non_plagiarism,0,基于聚乙烯醇水凝胶的功能化应用研究_耿敬天.pdf,medical_material,962,15,同一或相近领域的不同文档片段，作为同主题但不应判相似的负样本。
+samples/references/C024_ref.txt,C024,reference,samples/targets/C024_target.txt,same_topic_non_plagiarism,0,改性氧化锌催化剂制备及催化降解有机污染物的研究_何书桓.pdf,medical_material,942,11,同一或相近领域的不同文档片段，作为同主题但不应判相似的负样本。
+samples/targets/C025_target.txt,C025,target,samples/references/C025_ref.txt,unrelated,0,多特征融合的短文本语义相似度计算方法研究_张凝.pdf,text_similarity vs law,965,14,跨领域文档片段，作为完全无关负样本。
+samples/references/C025_ref.txt,C025,reference,samples/targets/C025_target.txt,unrelated,0,影评类短视频侵权纠纷中合理使用认定研究_连宇馨.pdf,text_similarity vs law,914,16,跨领域文档片段，作为完全无关负样本。
+samples/targets/C026_target.txt,C026,target,samples/references/C026_ref.txt,unrelated,0,基于Transformer的多尺度特征融合的小目标检测研究_王德玉.pdf,computer_vision vs education,1194,15,跨领域文档片段，作为完全无关负样本。
+samples/references/C026_ref.txt,C026,reference,samples/targets/C026_target.txt,unrelated,0,小学中段整本书阅读教学策略研究——以X小学为例_程凡芸.pdf,computer_vision vs education,953,12,跨领域文档片段，作为完全无关负样本。
+samples/targets/C027_target.txt,C027,target,samples/references/C027_ref.txt,unrelated,0,农业全产业链发展水平评价研究_徐靖.pdf,agri_logistics vs medical_material,957,14,跨领域文档片段，作为完全无关负样本。
+samples/references/C027_ref.txt,C027,reference,samples/targets/C027_target.txt,unrelated,0,基于深度学习的CT图像肺部结节检测与分割研究_杜禹博.pdf,agri_logistics vs medical_material,960,13,跨领域文档片段，作为完全无关负样本。
+samples/targets/C028_target.txt,C028,target,samples/references/C028_ref.txt,unrelated,0,ESG表现对企业避税的影响研究_常林.pdf,finance_management vs medical_material,938,9,跨领域文档片段，作为完全无关负样本。
+samples/references/C028_ref.txt,C028,reference,samples/targets/C028_target.txt,unrelated,0,改性氧化锌催化剂制备及催化降解有机污染物的研究_何书桓.pdf,finance_management vs medical_material,960,16,跨领域文档片段，作为完全无关负样本。
+samples/targets/C029_target.txt,C029,target,samples/references/C029_ref.txt,unrelated,0,“新事实-新规范”路径下虚拟财产的解释_陈亦洲.pdf,law vs computer_vision,998,19,跨领域文档片段，作为完全无关负样本。
+samples/references/C029_ref.txt,C029,reference,samples/targets/C029_target.txt,unrelated,0,基于Transformer的多尺度特征融合的小目标检测研究_王德玉.pdf,law vs computer_vision,962,20,跨领域文档片段，作为完全无关负样本。
+samples/targets/C030_target.txt,C030,target,samples/references/C030_ref.txt,unrelated,0,中国传统文化绘本在小学语文阅读教学中的应用研究_龚婧.pdf,education vs agri_logistics,990,16,跨领域文档片段，作为完全无关负样本。
+samples/references/C030_ref.txt,C030,reference,samples/targets/C030_target.txt,unrelated,0,政府规制下生鲜农产品供应链的区块链溯源决策研究_蒋凤娇.pdf,education vs agri_logistics,1101,12,跨领域文档片段，作为完全无关负样本。

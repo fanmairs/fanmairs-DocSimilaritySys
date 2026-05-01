@@ -1,0 +1,12 @@
+﻿experiment_stage,window_threshold,fine_threshold,description
+window_threshold,0.04,0.3,固定细粒度阈值，观察窗口命中阈值变化。
+window_threshold,0.06,0.3,固定细粒度阈值，观察窗口命中阈值变化。
+window_threshold,0.08,0.3,固定细粒度阈值，观察窗口命中阈值变化。
+window_threshold,0.1,0.3,固定细粒度阈值，观察窗口命中阈值变化。
+window_threshold,0.12,0.3,固定细粒度阈值，观察窗口命中阈值变化。
+window_threshold,0.15,0.3,固定细粒度阈值，观察窗口命中阈值变化。
+fine_threshold,0.08,0.2,固定窗口阈值，观察细粒度确认阈值变化。
+fine_threshold,0.08,0.25,固定窗口阈值，观察细粒度确认阈值变化。
+fine_threshold,0.08,0.3,固定窗口阈值，观察细粒度确认阈值变化。
+fine_threshold,0.08,0.35,固定窗口阈值，观察细粒度确认阈值变化。
+fine_threshold,0.08,0.4,固定窗口阈值，观察细粒度确认阈值变化。
