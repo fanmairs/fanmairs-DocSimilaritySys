@@ -14,7 +14,9 @@ class WindowDetector:
         synonyms_path=None,
         semantic_embeddings_path=None,
         semantic_threshold=0.55,
-        semantic_weight=0.25
+        semantic_weight=0.25,
+        window_threshold=0.08,
+        min_window_chars=40
     ):
         settings = get_settings()
         # 保留原来的参数以防其他地方调用报错，但我们现在改用自然句切分
@@ -22,6 +24,8 @@ class WindowDetector:
         self.step = step  
         self.synonyms_path = synonyms_path or settings.synonyms_path
         self.semantic_weight = max(0.0, min(float(semantic_weight), 0.5))
+        self.window_threshold = float(window_threshold)
+        self.min_window_chars = int(min_window_chars)
         self.semantic_scorer = SoftSemanticScorer(
             embeddings_path=semantic_embeddings_path or settings.semantic_embeddings_path,
             synonyms_path=self.synonyms_path,
@@ -119,7 +123,7 @@ class WindowDetector:
 
             # 我们将阈值设定在一个合理的范围（字面相似度超过 8% 即判定疑似）
             # 过滤掉极短的废话匹配（必须大于40个字符，屏蔽掉姓名、学院、小标题等）
-            if max_sim > 0.08 and len(win1[i]) > 40:  
+            if max_sim > self.window_threshold and len(win1[i]) > self.min_window_chars:
                 if not win1[i].strip() or (best_match_idx != -1 and not win2[best_match_idx].strip()):
                     continue
                 results.append({

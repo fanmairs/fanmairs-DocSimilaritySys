@@ -22,7 +22,10 @@ class PlagiarismDetectorSystem:
         synonyms_path=None,
         semantic_embeddings_path=None,
         semantic_threshold=0.55,
-        semantic_weight=0.35
+        semantic_weight=0.35,
+        window_threshold=0.08,
+        fine_trigger_threshold=0.35,
+        min_window_chars=40
     ):
         """
         系统初始化：装配所有核心组件
@@ -32,6 +35,7 @@ class PlagiarismDetectorSystem:
         self.vectorizer = WhiteBoxTFIDF()
         self.lsa = WhiteBoxLSA(n_components=lsa_components)
         self.semantic_weight = max(0.0, min(float(semantic_weight), 0.6))
+        self.fine_trigger_threshold = float(fine_trigger_threshold)
         self.semantic_scorer = SoftSemanticScorer(
             embeddings_path=semantic_embeddings_path,
             synonyms_path=synonyms_path,
@@ -43,7 +47,9 @@ class PlagiarismDetectorSystem:
             synonyms_path=synonyms_path,
             semantic_embeddings_path=semantic_embeddings_path,
             semantic_threshold=semantic_threshold,
-            semantic_weight=min(0.35, self.semantic_weight)
+            semantic_weight=min(0.35, self.semantic_weight),
+            window_threshold=window_threshold,
+            min_window_chars=min_window_chars
         ) # 引入段落级检测器
 
     def _fuse_similarity_scores(
@@ -146,6 +152,7 @@ class PlagiarismDetectorSystem:
 
         # 4. 文本预处理 (清洗+分词)
         print("[2/5] 启动 NLP 预处理与分词引擎...")
+        all_texts = [target_text] + ref_texts
         all_words = [self.preprocessor.clean_and_cut(text) for text in all_texts]
 
         # 5. 提取数学特征 (TF-IDF)
@@ -212,6 +219,8 @@ class PlagiarismDetectorSystem:
                 'risk_score': risk_score,
                 'traditional_lsa_components': requested_lsa_components,
                 'traditional_lsa_components_effective': actual_lsa_components,
+                'traditional_window_threshold': self.window_detector.window_threshold,
+                'traditional_fine_trigger_threshold': self.fine_trigger_threshold,
                 **semantic_resource_status,
             })
 
@@ -226,7 +235,13 @@ class PlagiarismDetectorSystem:
         for res in results:
             # 鏀惧缁嗙矑搴︽娴嬬殑闂ㄦ锛氬彧瑕?LSA 澶т簬 30%锛屾垨鑰?TF-IDF 澶т簬 30%锛岄兘杩涜缁嗙矑搴︽壂鎻?
             # 鍥犱负鍗充娇鏁寸瘒鏂囩珷鐩镐技搴﹀彧鏈?40%锛屼篃鍙兘鎰忓懗鐫€鍏朵腑鏈夋暣鏁翠竴娈垫槸瀹屽叏鎶勮鐨勶紒
-            if res.get('risk_score', 0) > 0.3 or res.get('sim_hybrid', 0) > 0.3 or res['sim_lsa'] > 0.3 or res['sim_tfidf'] > 0.3:
+            fine_trigger_threshold = self.fine_trigger_threshold
+            if (
+                res.get('risk_score', 0) > fine_trigger_threshold
+                or res.get('sim_hybrid', 0) > fine_trigger_threshold
+                or res['sim_lsa'] > fine_trigger_threshold
+                or res['sim_tfidf'] > fine_trigger_threshold
+            ):
                 try:
                     ref_text = self.read_document(res['file'])
                     if body_mode:

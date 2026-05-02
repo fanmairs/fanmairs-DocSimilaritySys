@@ -26,3 +26,6 @@ dicts/embeddings/*.bin
 
 # Local experimental corpus (keep private/offline by default)
 data/
+
+# Experiment run outputs
+experiments/threshold_sensitivity_results/
